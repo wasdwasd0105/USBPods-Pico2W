@@ -1,9 +1,8 @@
 # Apple AAC-ELD over A2DP (Vendor Codec 0x8001)
 
-
 ## Overview
 
-Apple uses AAC-ELD as a **vendor-specific A2DP codec** (not standard MPEG-2/4 AAC) for streaming audio to AirPods. It is registered under Apple's Bluetooth vendor ID `0x004C` with codec ID `0x8001`. Despite being transmitted over A2DP (media channel), the codec is internally classified as **UWBS (Ultra-Wideband Speech)** in Apple's Bluetooth stack, alongside mSBC and CVSD.
+Apple uses AAC-ELD as a **vendor-specific A2DP codec** (not standard MPEG-2/4 AAC). It is registered under Apple's Bluetooth vendor ID `0x004C` with codec ID `0x8001`, and is carried on the normal A2DP media channel.
 
 ## AVDTP Codec Discovery
 
@@ -33,73 +32,59 @@ The source sends back the selected configuration:
 83 E8 00      VBR=1, bitrate = 256000
 ```
 
-## Encoder Configuration
+Note the **`VBR = 1` bit** — the 256 kbps figure is a **ceiling, not a target**. See "Bitrate behaviour" below.
 
-macOS uses the Apple's AAC encoder with the following parameters:
+## Codec Parameters
 
 | Parameter | Value | Notes |
 |-----------|-------|-------|
 | **AOT** | 39 (ER AAC ELD) | Error-Resilient AAC Enhanced Low Delay |
-| **Sample Rate** | 48000 Hz | Input and output |
-| **Channels** | 2 (Stereo) | |
-| **Granule Length** | 480 samples | 10ms per frame at 48kHz |
-| **SBR** | Enabled (downsampled, ratio=1) | `AACEnhancedLowDelaySBREncoder` active |
-| **Bitrate** | ~227 kbps (measured) | CBR mode |
-| **Transport** | Raw Access Units | No LATM/LOAS/ADTS framing |
-| **Frame Rate** | ~100 fps | 48000 / 480 = 100 frames/sec |
+| **Sample rate** | 48000 Hz | |
+| **Channels** | 2 (stereo) | |
+| **Granule length** | 480 samples | 10 ms per frame at 48 kHz |
+| **SBR** | on, **downsampled (ratio = 1)** | SBR extension runs at the core rate, unlike HE-AAC's dual-rate SBR |
+| **Bitrate** | **VBR**, ~227 kbps observed average, 256 kbps ceiling | |
+| **Transport** | raw Access Units | no LATM/LOAS/ADTS framing |
+| **Frame rate** | 100 fps | 48000 / 480 |
 
-### Mode Identification
-
-Apple internally identifies this configuration as mode **130 = AAC-ELD-Stereo48K-10ms**:
-- Mode 129 = AAC-ELD-Stereo48K (512 samples, ~10.67ms)
-- Mode 130 = AAC-ELD-Stereo48K-10ms (480 samples, exactly 10ms)
-
-### SBR Details
-
-macOS uses ELD with SBR at ratio=1 (downsampled SBR), meaning the SBR extension operates at the same sample rate as the core coder (48kHz). This differs from HE-AAC's dual-rate SBR (ratio=2). The system_profiler shows `Current SampleRate: 24000` because the transport/core rate is half, with SBR reconstructing the upper band.
-
-### Measured Frame Characteristics
-
-From dtrace capture of `AudioCodecs::AACEncoder::AACEncodeOutput`:
-
-```
-Total frames captured: 299 (in 3.19 seconds)
-Frame rate: 93.8 fps (48000/512 effective with SBR)
-Frame sizes: min=278, max=320, avg=303 bytes
-Average bitrate: ~227 kbps
-First byte distribution: 0x85 (90%), 0x86 (8%), 0x84 (2%)
-```
-
-The first byte of each raw AU is the AAC `global_gain` field.
-
-
+Because SBR operates at ratio = 1, a host may report the device's stream as 24 kHz — that is the core coder rate, with SBR reconstructing the upper band. The frame length stays 480 samples / 10 ms.
 
 ## RTP Packet Format
 
-### RTP Header (12 bytes, standard)
+Wire-verified over **3732 consecutive media packets** from a macOS → AirPods session. Standard 12-byte RTP header; invariant fields held at 100 %:
 
-Standard A2DP RTP header with media payload type for vendor codec.
+| Field | Value | Notes |
+|---|---|---|
+| Version | 2 | |
+| Padding / Extension / CC | 0 / 0 / 0 | |
+| **Marker** | **0 — never set** | not used to flag discontinuity |
+| **Payload type** | **96 (0x60)** | dynamic |
+| Sequence | +1 per packet | |
+| **Timestamp** | **1 kHz clock (milliseconds), +30 per packet** | see below |
+| **SSRC** | **0x00000000 — always** | never randomised |
+
+### RTP timestamp is millisecond-based, not sample-based
+
+Measured over a 58.408 s contiguous run, the timestamp advanced **58 287** units — an implied clock of **997.9 Hz ≈ 1 kHz**. A sample-based clock would have advanced 2 803 584 @ 48 kHz. Mean advance is exactly **30.00 per packet** against a 30.06 ms mean packet interval: one unit per millisecond, matching 3 × 480 samples @ 48 kHz = 30 ms.
+
+Per-packet deltas jitter across 29/30/31/32/33 with a mean of exactly 30.00, consistent with stamping from a real millisecond clock rather than accumulating a computed sample count.
+
+> A sample-based `timestamp += 1440` also plays correctly on AirPods — they tolerate it — but it is not what macOS sends. Worth aligning if A/V sync or jitter-buffer behaviour is ever suspect.
+
+### Payload structure
+
+Each RTP packet carries **3 AAC-ELD frames**, each preceded by a 4-byte Apple header:
 
 ```
-A2DP configured at 48.0 KHz. Codec: AAC-ELD, VBR max: 256 kbps. 3 frames * (2+320) bytes = 966 per RTP (max=986) every 30.00 ms
-```
-
-### RTP Payload Structure
-
-Each RTP packet contains **3 AAC-ELD frames**, each preceded by a 4-byte Apple header:
-
-```
-
-+-- Frame 1 ----------------------------------------+
++-- Frame 1 ------------------------------------------+
 | Apple Header (4 bytes) | Raw AAC-ELD AU (~300 bytes) |
-+-- Frame 2 ----------------------------------------+
++-- Frame 2 ------------------------------------------+
 | Apple Header (4 bytes) | Raw AAC-ELD AU (~300 bytes) |
-+-- Frame 3 ----------------------------------------+
++-- Frame 3 ------------------------------------------+
 | Apple Header (4 bytes) | Raw AAC-ELD AU (~300 bytes) |
-+---------------------------------------------------+
++-----------------------------------------------------+
 
 Total payload: ~912 bytes (3 * (4 + ~300))
-
 ```
 
 ### Apple AAC-ELD Size Header (4 bytes per frame)
@@ -111,17 +96,27 @@ Byte 2: 0x10 | (au_size >> 8) & 0x0F      -- marker 0x10 + size high 4 bits
 Byte 3: au_size & 0xFF                     -- size low 8 bits
 ```
 
-- **Sequence**: 12-bit counter (0-4095), increments per frame, wraps at 0xFFF
-- **AU Size**: 12-bit field, max 2047 bytes (0x7FF). BTAudioHALPlugin logs `FATAL: Unable to correctly create AAC-ELD Size Header for %d bytes of encoded audio (max: 0x7FF = 2047)` if exceeded
-- **Marker nibbles**: 0xB (byte 0 high) and 0x1 (byte 2 high) are fixed identifiers
+- **Sequence**: 12-bit counter (0–4095), increments **per frame**, wraps at 0xFFF
+- **AU size**: 12-bit field; the practical maximum is **2047 bytes (0x7FF)**
+- **Marker nibbles**: `0xB` (byte 0 high) and `0x1` (byte 2 high) are fixed identifiers
 
-Example: `B0 0A 11 33` = sequence 10, AU size 307 bytes
+Example: `B0 0A 11 33` = sequence 10, AU size 307 bytes.
 
-### RTP Timestamp
+### Verified full packet layout
 
-Sample-count based (standard A2DP), incremented by `frames_sent * 480` per packet:
-- 3 frames per packet: timestamp += 1440
-- Packet interval: 30ms (3 * 10ms frames)
+```
+ACL   (4B)  0B 20 9F 03   handle 0x00B | PB=0b10 AUTO-FLUSHABLE | len
+L2CAP (4B)  9B 03 07 04   len | CID 0x0407
+RTP  (12B)  80 60 33 61 00 0D 14 0F 00 00 00 00
+            V=2  PT=96  seq=0x3361  ts=857103 (ms)  SSRC=0
+AU #1       B9 FA 11 2B   seq=0x9FA(2554) size=0x12B(299)  + 299 bytes AAC-ELD
+AU #2       [4B hdr]      seq=2555                          + AU
+AU #3       [4B hdr]      seq=2556                          + AU
+```
+
+Confirmed across all 3732 packets: header nibbles `0xB` / `0x1` at 100 %, Apple AU sequence **+3 per packet** (exactly 3 AUs), AU sizes **4–320 bytes**, ACL length always L2CAP length + 4, and the ACL packet-boundary flag **always `0b10` (automatically flushable)**.
+
+That last one matters for link robustness — see "Link behaviour under loss".
 
 ## Packet Timing
 
@@ -130,66 +125,109 @@ Sample-count based (standard A2DP), incremented by `frames_sent * 480` per packe
 | Frames per packet | 3 |
 | Samples per frame | 480 |
 | Samples per packet | 1440 |
-| Packet interval | 30ms |
+| Packet interval | 30 ms |
 | Packets per second | ~33 |
 | Payload per packet | ~912 bytes |
 | Effective bitrate (with headers) | ~250 kbps |
 
+## Bitrate behaviour
+
+**The steady state is VBR**, confirmed three independent ways:
+
+1. The AVDTP `SET_CONFIGURATION` carries **`VBR = 1`**, with 256000 as a *maximum*.
+2. Measured AU sizes vary continuously — **4–320 bytes** across 3732 wire-captured packets.
+3. Frame-size sampling gives min 278 / max 320 / avg 303 bytes, ~227 kbps average — not constant.
+
+**macOS does not reduce its bitrate when the link degrades.** Measured directly: during 30 s at roughly 70 % packet loss with repeated total audio dropout, encoder output was completely flat —
+
+| 10 s window | AU count | mean AU size | min | max |
+|---|---|---|---|---|
+| clean | 223 | **300.0 B** | 228 | 320 |
+| **loss** | 315 | **300.3 B** | 225 | 320 |
+| **loss** | 315 | **301.7 B** | 230 | 320 |
+| **loss** | 329 | **300.8 B** | 231 | 320 |
+| clean | 333 | **300.3 B** | 232 | 320 |
+
+— even with the link reporting up to **100 % retransmission at −106 dBm**. Do not assume the source throttles on a bad link; it keeps encoding at full rate.
+
+## Link behaviour under loss
+
+Two observations that matter far more than codec tuning for real-world stability:
+
+1. **Media packets need to be auto-flushable** (ACL packet-boundary flag `0b10`), with a **200 ms automatic flush timeout** set on the link.
+2. **The encoder is never paused, throttled, or restarted** because of link trouble. Transmission continues at full real-time rate throughout.
+
+The combination means a degraded link causes packets to be **discarded**, not queued. The sink therefore sees a stream with *gaps* — which its decoder conceals — rather than a burst of stale audio arriving late, which is what desynchronises an ELD decoder's overlap-add state.
+
+**If your controller does not honour the automatic flush timeout**, media will queue and retransmit unboundedly, and the sink will drain badly delayed audio long after the link recovers. In that case, issue a flush from the host when the controller's TX buffers stay full past the deadline.
+
 ## Compatibility Notes
 
-### What Works
+### What works
 
-- **AOT 39 (ER AAC ELD), no SBR, 480 samples, 265kbps CBR** with Apple per-frame header produces stable audio on AirPods
+- **AOT 39 (ER AAC ELD), 480 samples, SBR ratio = 1, VBR with a 256 kbps peak** — the full macOS shape — with the Apple per-frame header. Hardware-verified.
+- **AOT 39, 480 samples, no SBR, 265 kbps CBR** also works — AirPods accept it — but it is not what macOS sends.
 
-### What Doesn't Work
+### What doesn't work
 
-- **512-sample granule length**: AirPods plays ~0.1s then stops. Must be 480 (10ms mode)
-- **No Apple header (raw AU concatenation)**: No audio output
-- **SBR**: unstable
+- **512-sample granule length**: AirPods play ~0.1 s then stop. Must be 480 (10 ms mode).
+- **No Apple header** (raw AU concatenation): no audio output.
+- ~~**SBR**: unstable~~ — **corrected: SBR was never actually enabled in those tests.** See the FDK note below; `aacEncOpen()` must allocate the SBR module or `AACENC_SBR_MODE` is silently ignored.
 
-### FDK-AAC Encoder Settings (Working)
+### FDK-AAC encoder settings (macOS parity — SBR + VBR)
 
 ```c
+aacEncOpen(&handleAAC, 0x03, 2);                          // 0x03 = AAC core + SBR module!
+                                                          // 0x01 makes SBR_MODE a silent no-op
 aacEncoder_SetParam(handleAAC, AACENC_AOT, 39);           // ER AAC ELD
-aacEncoder_SetParam(handleAAC, AACENC_BITRATE, 265000);   // 265kbps CBR
+aacEncoder_SetParam(handleAAC, AACENC_BITRATE, 256000);   // used only in CBR mode (ignored under VBR)
 aacEncoder_SetParam(handleAAC, AACENC_SAMPLERATE, 48000);
 aacEncoder_SetParam(handleAAC, AACENC_CHANNELMODE, 2);    // Stereo
-aacEncoder_SetParam(handleAAC, AACENC_GRANULE_LENGTH, 480); // 10ms frames
-aacEncoder_SetParam(handleAAC, AACENC_SBR_MODE, 0);       // SBR off
-aacEncoder_SetParam(handleAAC, AACENC_BITRATEMODE, 0);    // CBR
+aacEncoder_SetParam(handleAAC, AACENC_GRANULE_LENGTH, 480); // 10 ms frames
+aacEncoder_SetParam(handleAAC, AACENC_SBR_MODE, 1);       // LD-SBR on
+aacEncoder_SetParam(handleAAC, AACENC_SBR_RATIO, 1);      // downsampled, matching Apple —
+                                                          // NOT dual-rate; granule stays 480/10 ms
+aacEncoder_SetParam(handleAAC, AACENC_BITRATEMODE, 5);    // VBR_5 (~192k stereo nominal, the nearest
+                                                          // FDK preset to the ~227k observed average)
+aacEncoder_SetParam(handleAAC, AACENC_PEAK_BITRATE, 256000); // ceiling: maxBitsPerFrame
+                                                          // = 256000/100 = 320 B — exactly the
+                                                          // max AU size seen on the wire
 aacEncoder_SetParam(handleAAC, AACENC_AFTERBURNER, 0);    // Off (CPU constraint)
 aacEncoder_SetParam(handleAAC, AACENC_TRANSMUX, TT_MP4_RAW); // Raw AUs
 ```
 
+**Verify SBR actually made it into the bitstream** by reading the encoder's ASC (`aacEncInfo` → `confBuf`): `ldSbrPresentFlag` must be 1 and frameLength must stay 480. `aacEncOpen(..., 0x01, ...)` allocates the AAC core only; the later `AACENC_SBR_MODE` call then checks for an SBR encoder instance, finds none, and **still returns `AACENC_OK`** — so the setting silently does nothing.
+
+Two operational notes:
+
+- **Drop to CBR (`AACENC_BITRATEMODE = 0`) whenever a specific bitrate must actually bind.** Under VBR, FDK ignores `AACENC_BITRATE`, so a coexistence cap, a low-latency gaming rate, or a user-selected rate silently becomes a no-op.
+- **Budget packets for the peak, not the average.** Under VBR the per-AU size bound is `PEAK_BITRATE / 800` bytes (320 B at 256 kbps), not `bitrate / 800`.
+
 ## Signal Loss Recovery
 
-AAC-ELD uses inter-frame prediction (overlap-add windowing), so both the encoder and decoder maintain internal state that depends on previous frames. When Bluetooth signal is temporarily lost (e.g. AirPods out of range for 1-2 seconds), frames are dropped and the decoder state diverges from the encoder state. Simply resuming transmission produces silence — the decoder cannot decode frames whose overlap context it missed.
+AAC-ELD uses inter-frame prediction (overlap-add windowing), so encoder and decoder both carry state that depends on previous frames. If frames are lost or a discontinuity is injected mid-stream, the decoder's overlap context diverges from the encoder's and simply resuming transmission can produce silence.
 
 ### Symptoms
 
-When signal degrades, the L2CAP send buffer fills up and `can_send_now` callback stops firing. The audio timer continues encoding frames, but `codec_ready_to_send` stays 1 (stuck). After signal returns, packets can be sent again, but AirPods produces no audio despite receiving data.
+The L2CAP send buffer fills, `can_send_now` stops firing, and the encode path stalls with data staged. After the link recovers, packets flow again but the sink produces no audio despite receiving a well-formed stream.
 
-### Recovery: SUSPEND → START with Encoder Reset
+### Recovery: SUSPEND → START with encoder reset
 
-The only reliable recovery is a full AVDTP SUSPEND → START cycle, which tells AirPods to flush and reinitialize its decoder. Combined with a local encoder reset, both sides start from a clean state.
+A full AVDTP SUSPEND → START cycle makes the sink flush and reinitialise its decoder. Combined with a local encoder reset, both ends restart from a clean state:
 
-On detecting a send failure (100ms without `can_send_now`):
-
-1. **Reset the FDK-AAC encoder** — close and reopen with the same parameters to flush internal overlap/prediction buffers
-2. **Reset `aaceld_frame_sequence` to 1** — fresh 12-bit sequence counter
-3. **Reset `rtp_timestamp` to 0** — avoid timestamp discontinuity
-4. **Send AVDTP SUSPEND** — AirPods resets its decoder
-5. **On SUSPEND confirmation, send AVDTP START** — stream resumes with clean state on both sides
+1. **Reset the encoder** — close and reopen with the same parameters to clear overlap/prediction buffers
+2. **Reset the AU sequence counter**
+3. **Reset the RTP timestamp**
+4. **Send AVDTP SUSPEND**
+5. **On SUSPEND confirmation, send AVDTP START**
 
 ```c
-// Trigger on first send failure for AAC-ELD (before signal returns on its own)
 int suspend_threshold = (cur_codec == 4) ? 1 : 3;
 
 if (fail_count >= suspend_threshold) {
     if (cur_codec == 4) {
-        // Reset encoder state
         aacEncClose(&handleAAC);
-        aacEncOpen(&handleAAC, 0x01, 2);
+        aacEncOpen(&handleAAC, 0x03, 2);   // 0x03: keep the SBR module allocated
         // ... re-apply all AACENC_* params ...
         aacEncEncode(handleAAC, NULL, NULL, NULL, NULL);
 
@@ -203,3 +241,19 @@ if (fail_count >= suspend_threshold) {
     // On AVDTP_SI_START callback → a2dp_demo_timer_start()
 }
 ```
+
+### Why sequence/timestamp reset alone is not enough
+
+Resetting the sequence and timestamp without SUSPEND → START does not work: the sink still holds stale overlap buffers from the last frame it decoded, while frames from a freshly reset encoder assume zeroed overlap. The mismatch yields silence or artifacts. Only the SUSPEND → START cycle clears the sink's decoder state.
+
+### Suspend recovery timer
+
+If the sink is out of range when SUSPEND is sent, the response may never arrive. Arm a 3-second timer after sending SUSPEND; if nothing comes back, call start-stream directly to force recovery.
+
+### Prevention beats recovery
+
+A recovery cycle costs about a second of audio, so avoid needing one:
+
+- **Never stop the encoder or the packet pump** because the link looks bad — a paused-then-resumed stream is itself the discontinuity that desynchronises the decoder.
+- **Bound the transmit backlog** so stale audio is discarded rather than delivered late (see "Link behaviour under loss").
+- **Keep the AU sequence continuous** across any dropped packets, so the sink sees a plain content gap rather than a sequence break.
