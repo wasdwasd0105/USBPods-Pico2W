@@ -205,6 +205,8 @@ Two operational notes:
 
 ## Signal Loss Recovery
 
+If Media packets are auto-flushable, it should never have signal loss; however, if it can be set, `Signal Loss Recovery` may be helpful
+
 AAC-ELD uses inter-frame prediction (overlap-add windowing), so encoder and decoder both carry state that depends on previous frames. If frames are lost or a discontinuity is injected mid-stream, the decoder's overlap context diverges from the encoder's and simply resuming transmission can produce silence.
 
 ### Symptoms
