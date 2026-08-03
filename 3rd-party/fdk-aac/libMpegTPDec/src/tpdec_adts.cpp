@@ -291,7 +291,7 @@ TRANSPORTDEC_ERROR adtsRead_DecodeHeader(HANDLE_ADTS pAdts,
           FDKpushBack(hBs, adtsHeaderLength);
 
           if ((cmp_buffer_fullness + adtsHeaderLength) >
-              (((8192 * 4) << 3) - 7)) {
+              (((8192 * 1) /* usbpods: 32K->8K, A2DP LATM pkts < 1KB */ << 3) - 7)) {
             return TRANSPORTDEC_SYNC_ERROR;
           } else {
             return TRANSPORTDEC_NOT_ENOUGH_BITS;

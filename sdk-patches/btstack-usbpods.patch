@@ -1,0 +1,228 @@
+diff --git a/src/classic/avdtp_initiator.c b/src/classic/avdtp_initiator.c
+index 36055e4e4..13b3a9402 100644
+--- a/src/classic/avdtp_initiator.c
++++ b/src/classic/avdtp_initiator.c
+@@ -284,6 +284,23 @@ void avdtp_initiator_stream_config_subsm(avdtp_connection_t *connection, uint8_t
+                 case AVDTP_SI_SET_CONFIGURATION:
+                     connection->configuration_state = AVDTP_CONFIGURATION_STATE_IDLE;
+                     sep.in_use = 0;
++                    /* usbpods PATCH: a SET_CONFIGURATION reject carries the
++                       SERVICE CATEGORY the sink objected to plus an AVDTP
++                       error code, and stock BTstack drops both — leaving
++                       "Rejected AVDTP_SI_SET_CONFIGURATION" and pure guesswork
++                       about which field a headset disliked. Print them.
++                       category 0x07 = MEDIA_CODEC, 0x04 = CONTENT_PROTECTION;
++                       error 0x29 INVALID_CAPABILITIES, 0x2B NOT_SUPPORTED_CODEC,
++                       0x35 INVALID_OBJECT_TYPE, 0x39 INVALID_BIT_RATE,
++                       0x3A INVALID_SAMPLING_FREQUENCY, 0x3E INVALID_CHANNELS. */
++                    {
++                        extern int printf(const char *, ...);
++                        printf("AVDTP reject raw: size %u offset %d pkt_type %u :",
++                               size, offset,
++                               (unsigned) connection->initiator_signaling_packet.packet_type);
++                        for (uint16_t ri = 0; ri < size && ri < 12; ri++) printf(" %02x", packet[ri]);
++                        printf("\n");
++                    }
+                     log_info("Received reject for set configuration, role changed from initiator to acceptor. TODO: implement retry.");
+                     break;
+                 case AVDTP_SI_RECONFIGURE:
+diff --git a/src/classic/avdtp_source.c b/src/classic/avdtp_source.c
+index 6363ae34c..2ef6fbd8b 100644
+--- a/src/classic/avdtp_source.c
++++ b/src/classic/avdtp_source.c
+@@ -174,7 +174,7 @@ static void avdtp_source_setup_media_header(uint8_t *media_packet, uint8_t marke
+     uint8_t  extension = 0;
+     uint8_t  csrc_count = 0;
+     uint8_t  payload_type = 0x60;
+-    uint32_t ssrc = 0x11223344;
++    uint32_t ssrc = 0x00000000;   /* usbpods: macOS sends SSRC 0 always (wire, 3732 pkts) */
+ 
+     // rtp header (min size 12B)
+     uint16_t pos = 0;
+diff --git a/src/classic/hfp.h b/src/classic/hfp.h
+index 598f665f4..eef97d6e5 100644
+--- a/src/classic/hfp.h
++++ b/src/classic/hfp.h
+@@ -774,6 +774,13 @@ typedef struct hfp_connection {
+     hci_con_handle_t nxp_start_audio_handle;
+     hci_con_handle_t nxp_stop_audio_handle;
+ #endif
++    /* usbpods: AG pipelining fix — HFs that send several AT commands in one
++       RFCOMM packet (PipeWire) overwrote ->command mid-response (CIND
++       definitions answered twice, CIND? status never). One command is
++       processed per pass; the packet remainder parks here and is drained
++       via the can-send-now path once the response is out. */
++    uint8_t ag_rx_pending[64];
++    uint8_t ag_rx_pending_len;
+ } hfp_connection_t;
+ 
+ /**
+diff --git a/src/classic/hfp_ag.c b/src/classic/hfp_ag.c
+index 6a7305106..396055aa7 100644
+--- a/src/classic/hfp_ag.c
++++ b/src/classic/hfp_ag.c
+@@ -282,7 +282,11 @@ static int hfp_ag_send_report_extended_audio_gateway_error(uint16_t cid, uint8_t
+ 
+ static int hfp_ag_send_apple_information(uint16_t cid){
+     char buffer[50];
+-    btstack_snprintf_assert_complete(buffer, sizeof(buffer), "\r\n%s:%s,%d\r\n",
++    /* usbpods: Apple's accessory spec uses '=' ("+XAPL=iPhone,features"),
++       not ':' — real iPhones and the working ESP32 AG both send '='. A
++       response the AirPods can't parse may flag us un-Apple (suspected
++       factor in eSCO refusal). */
++    btstack_snprintf_assert_complete(buffer, sizeof(buffer), "\r\n%s=%s,%d\r\n",
+              HFP_APPLE_ACCESSORY_INFORMATION, hfp_ag_apple_device, hfp_ag_apple_features);
+     return send_str_over_rfcomm(cid, buffer);
+ }
+@@ -2636,9 +2640,65 @@ static void hfp_ag_handle_rfcomm_data(hfp_connection_t * hfp_connection, uint8_t
+             default:
+                 break;
+         }
++
++        /* usbpods pipelining fix: ONE complete command per pass. HFs that
++           batch several AT commands into one RFCOMM packet (PipeWire's HF)
++           overwrote ->command while the previous response was still being
++           segmented (CIND definitions emitted twice, CIND? status never —
++           SLC stalled). Park the remainder; it drains via can-send-now. */
++        if ((pos + 1) < size){
++            uint16_t rest = size - (pos + 1);
++            if (rest > sizeof(hfp_connection->ag_rx_pending)){
++                log_error("hfp_ag: pipelined remainder %u too big, dropped", rest);
++                rest = 0;
++            }
++            if (rest > 0){
++                (void)memcpy(hfp_connection->ag_rx_pending, &packet[pos + 1], rest);
++                hfp_connection->ag_rx_pending_len = (uint8_t)rest;
++                rfcomm_request_can_send_now_event(hfp_connection->rfcomm_cid);
++            }
++            break;
++        }
+     }
+ }
+ 
++/* The AG is mid-response (actively segmenting an SLC reply) in these states.
++   ->command is NOT reset during segmentation, so gate the pipeline drain on
++   STATE, not command (the original command-based guard never fired -> CIND?
++   was replayed at the wrong moment -> the "+CIND answered 4x, SLC stalls"
++   bug with PipeWire's batched AT commands). */
++static bool hfp_ag_slc_response_in_flight(const hfp_connection_t * c){
++    switch (c->state){
++        case HFP_RETRIEVE_INDICATORS:
++        case HFP_RETRIEVE_INDICATORS_STATUS:
++        case HFP_ENABLE_INDICATORS_STATUS_UPDATE:
++        case HFP_RETRIEVE_CAN_HOLD_CALL:
++        case HFP_LIST_GENERIC_STATUS_INDICATORS:
++        case HFP_RETRIEVE_GENERIC_STATUS_INDICATORS:
++        case HFP_RETRIEVE_INITITAL_STATE_GENERIC_STATUS_INDICATORS:
++            return true;
++        default:
++            return false;
++    }
++}
++
++/* Drain one parked pipelined command once the AG is idle (not mid-response).
++   Returns true if bytes were processed (caller should run the context). */
++static bool hfp_ag_drain_pending_rx(hfp_connection_t * hfp_connection){
++    if (hfp_connection->ag_rx_pending_len == 0) return false;
++    if (hfp_ag_slc_response_in_flight(hfp_connection)){
++        /* still segmenting the previous reply — retry on the next slot */
++        rfcomm_request_can_send_now_event(hfp_connection->rfcomm_cid);
++        return false;
++    }
++    uint8_t tmp[sizeof(hfp_connection->ag_rx_pending)];
++    uint8_t n = hfp_connection->ag_rx_pending_len;
++    (void)memcpy(tmp, hfp_connection->ag_rx_pending, n);
++    hfp_connection->ag_rx_pending_len = 0;
++    hfp_ag_handle_rfcomm_data(hfp_connection, tmp, n);   /* may re-park */
++    return true;
++}
++
+ static void hfp_ag_run(void){
+     btstack_linked_list_iterator_t it;    
+     btstack_linked_list_iterator_init(&it, hfp_get_connections());
+@@ -2666,6 +2726,11 @@ static void hfp_ag_rfcomm_packet_handler(uint8_t packet_type, uint16_t channel,
+                 btstack_assert(hfp_connection != NULL);
+ 
+                 hfp_ag_run_for_context(hfp_connection);
++                /* usbpods pipelining fix: take the next parked command once
++                   the previous response has fully gone out. */
++                if (hfp_ag_drain_pending_rx(hfp_connection)){
++                    hfp_ag_run_for_context(hfp_connection);
++                }
+                 return;
+             }
+             hfp_handle_rfcomm_event(packet_type, channel, packet, size, HFP_ROLE_AG);
+diff --git a/src/hci.c b/src/hci.c
+index d3f440424..dda792b45 100644
+--- a/src/hci.c
++++ b/src/hci.c
+@@ -3763,13 +3763,13 @@ static void event_handler(uint8_t *packet, uint16_t size){
+ 
+ #ifdef ENABLE_CLASSIC
+         case HCI_EVENT_FLUSH_OCCURRED:
+-            // flush occurs only if automatic flush has been enabled by gap_enable_link_watchdog()
++            /* usbpods: macOS semantics — a flush is the flush timeout doing
++               its job; never disconnect (upstream treated it as a link
++               watchdog). The app counts the event ONCE in its own handler
++               (src/btstack/btstack_hci.c) — no counting here, an earlier
++               revision incremented in both places and every event read as 2. */
+             handle = hci_event_flush_occurred_get_handle(packet);
+-            conn = hci_connection_for_handle(handle);
+-            if (conn) {
+-                log_info("Flush occurred, disconnect 0x%04x", handle);
+-                conn->state = SEND_DISCONNECT;
+-            }
++            UNUSED(handle);
+             break;
+ 
+         case HCI_EVENT_INQUIRY_COMPLETE:
+diff --git a/src/l2cap.c b/src/l2cap.c
+index 32d8a4ce5..7651d67e7 100644
+--- a/src/l2cap.c
++++ b/src/l2cap.c
+@@ -1408,8 +1408,16 @@ static void l2cap_rtx_timeout(btstack_timer_source_t * ts){
+     l2cap_free_channel_entry(channel);
+ }
+ 
++/* usbpods: control stays NON-flushable even with an automatic flush timeout
++   set (macOS discipline, wire-verified): flushing signaling on a fading link
++   breaks reliable protocol channels and tears the connection down instantly.
++   Only the registered media channel is marked automatically flushable. */
++static uint16_t l2cap_flushable_local_cid;
++void l2cap_set_flushable_local_cid(uint16_t local_cid){
++    l2cap_flushable_local_cid = local_cid;
++}
+ static uint8_t l2cap_classic_packet_boundary_flag(void){
+-    return (hci_non_flushable_packet_boundary_flag_supported() && (hci_automatic_flush_timeout() == 0)) ? 0x00 : 0x02;
++    return hci_non_flushable_packet_boundary_flag_supported() ? 0x00 : 0x02;
+ }
+ #endif
+ 
+@@ -1516,6 +1524,13 @@ uint8_t l2cap_send_prepared(uint16_t local_cid, uint16_t len){
+     // set non-flushable packet boundary flag if supported on Controller
+     uint8_t *acl_buffer = hci_get_outgoing_packet_buffer();
+     uint8_t packet_boundary_flag = l2cap_classic_packet_boundary_flag();
++    if ((l2cap_flushable_local_cid != 0) &&
++        (channel->local_cid == l2cap_flushable_local_cid)){
++        packet_boundary_flag = 0x02;   /* usbpods: media = auto-flushable */
++        {   extern uint32_t usbpods_flushable_tx_count;
++            usbpods_flushable_tx_count++;   /* proof the marking engages */
++        }
++    }
+     l2cap_setup_header(acl_buffer, channel->con_handle, packet_boundary_flag, channel->remote_cid, len + fcs_size);
+ 
+ #ifdef ENABLE_L2CAP_ENHANCED_RETRANSMISSION_MODE
+diff --git a/src/l2cap.h b/src/l2cap.h
+index d0abb8a0c..7c23c17bb 100644
+--- a/src/l2cap.h
++++ b/src/l2cap.h
+@@ -483,6 +483,9 @@ void l2cap_remove_event_handler(btstack_packet_callback_registration_t * callbac
+  */
+ uint16_t l2cap_max_mtu(void);
+ 
++/* usbpods: mark ONE channel's ACL as automatically flushable (0 = none). */
++void l2cap_set_flushable_local_cid(uint16_t local_cid);
++
+ /** 
+  * @brief Get max MTU for LE connections based on btstack configuration
+  */

@@ -39,6 +39,12 @@
  {
    ITF_NUM_AUDIO_CONTROL = 0,
    ITF_NUM_AUDIO_STREAMING_SPK,
+   ITF_NUM_HID,
+   ITF_NUM_CDC,        /* CDC notification (comm) interface */
+   ITF_NUM_CDC_DATA,   /* CDC data interface                */
+#ifndef USBPODS_LITE
+   ITF_NUM_VENDOR,     /* WebUSB config channel (0 endpoints, EP0 control) */
+#endif
    ITF_NUM_TOTAL
  };
  
@@ -61,7 +67,11 @@
  
  #define TUD_AUDIO_HEADSET_STEREO_DESCRIPTOR(_stridx, _epout, _epin_unused, _epint) \
      /* Standard Interface Association Descriptor (IAD) */\
-     TUD_AUDIO_DESC_IAD(/*_firstitf*/ ITF_NUM_AUDIO_CONTROL, /*_nitfs*/ ITF_NUM_TOTAL, /*_stridx*/ 0x00),\
+     /* IAD spans ONLY the audio function's 2 interfaces (AC + AS). It used to
+        say ITF_NUM_TOTAL, which silently grew to 3 when the HID interface was
+        added — the IAD then claimed the HID itf too, TinyUSB double-bound it,
+        and SET_CONFIGURATION failed: no device on the host at all. */\
+     TUD_AUDIO_DESC_IAD(/*_firstitf*/ ITF_NUM_AUDIO_CONTROL, /*_nitfs*/ 2, /*_stridx*/ 0x00),\
      /* Standard AC Interface Descriptor(4.7.1) */\
      TUD_AUDIO_DESC_STD_AC(/*_itfnum*/ ITF_NUM_AUDIO_CONTROL, /*_nEPs*/ 0x01, /*_stridx*/ _stridx),\
      /* Class-Specific AC Interface Header Descriptor(4.7.2) */\

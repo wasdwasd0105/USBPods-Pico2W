@@ -16,8 +16,11 @@
 #define HCI_OUTGOING_PRE_BUFFER_SIZE 4
 #define HCI_ACL_PAYLOAD_SIZE (1691 + 4)
 #define HCI_ACL_CHUNK_SIZE_ALIGNMENT 4
-#define MAX_NR_AVDTP_CONNECTIONS 1
-#define MAX_NR_AVDTP_STREAM_ENDPOINTS 3
+/* Sink relay: headset (source role) + phone (sink role) = 2 AVDTP links.
+   Endpoints: up to 4 lazily-created source SEPs (SBC/AAC/LDAC/ELD) +
+   2 sink SEPs (SBC + AAC-LC). */
+#define MAX_NR_AVDTP_CONNECTIONS 2
+#define MAX_NR_AVDTP_STREAM_ENDPOINTS 6
 #define MAX_NR_AVRCP_CONNECTIONS 2
 #define MAX_NR_BNEP_CHANNELS 1
 #define MAX_NR_BNEP_SERVICES 1
@@ -27,24 +30,36 @@
 #define MAX_NR_HID_HOST_CONNECTIONS 1
 #define MAX_NR_HIDS_CLIENTS 1
 #define MAX_NR_HFP_CONNECTIONS 1
-#define MAX_NR_L2CAP_CHANNELS  4
+/* headset: AVDTP sig+media, AVCTP, AAP = 4; phone: AVDTP sig+media, AVCTP = 3;
+   +1 transient SDP-client channel during outgoing connects. */
+#define MAX_NR_L2CAP_CHANNELS  8
 #define MAX_NR_L2CAP_SERVICES  3
 #define MAX_NR_RFCOMM_CHANNELS 1
 #define MAX_NR_RFCOMM_MULTIPLEXERS 1
 #define MAX_NR_RFCOMM_SERVICES 1
-#define MAX_NR_SERVICE_RECORD_ITEMS 4
+#define MAX_NR_SERVICE_RECORD_ITEMS 6   /* A2DP src + snk, AVRCP tgt + ctl */
 #define MAX_NR_SM_LOOKUP_ENTRIES 3
 #define MAX_NR_WHITELIST_ENTRIES 16
 #define MAX_NR_LE_DEVICE_DB_ENTRIES 16
 
-// Limit number of ACL/SCO Buffer to use by stack to avoid cyw43 shared bus overrun
-#define MAX_NR_CONTROLLER_ACL_BUFFERS 3
+// Limit number of ACL/SCO Buffer to use by stack to avoid cyw43 shared bus overrun.
+// 3 -> 6 for the sink relay: two A2DP links share these TX slots; at 3, a brief
+// retransmit episode on the headset link wedges ALL sending (the 100ms
+// codec_ready_to_send stall -> staged-audio drop). ESP32 relay made the same
+// move (TX 4 -> 6, round 16). No WiFi on this build, so bus headroom is ample.
+#define MAX_NR_CONTROLLER_ACL_BUFFERS 6
 #define MAX_NR_CONTROLLER_SCO_PACKETS 3
 
 // Enable and configure HCI Controller to Host Flow Control to avoid cyw43 shared bus overrun
 #define ENABLE_HCI_CONTROLLER_TO_HOST_FLOW_CONTROL
 #define HCI_HOST_ACL_PACKET_LEN 1024
-#define HCI_HOST_ACL_PACKET_NUM 3
+/* 3 -> 8: with the sink relay there are TWO A2DP links feeding the host; at
+   3 credits the controller stalls delivery whenever one run-loop pass is
+   slow (encode burst), its RX buffers back up, air ACKs stop and the phone's
+   retransmissions surface as repeated dropouts — the ESP32 hit the identical
+   failure and fixed it with controller RX buffers 6->14 (its round 13).
+   Credits are flow-control accounting, not allocated buffers: free. */
+#define HCI_HOST_ACL_PACKET_NUM 8
 #define HCI_HOST_SCO_PACKET_LEN 120
 #define HCI_HOST_SCO_PACKET_NUM 3
 

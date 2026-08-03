@@ -186,9 +186,17 @@ DECLFUNC int ldacBT_assert_pcm_sampling_freq( int sampling_freq )
     }
     return LDACBT_ERR_NONE;
 }
+/* usbpods: LDACBT_MTU_REQUIRED (679) assumes the link offers a 679-byte
+   A2DP packet. Plenty of sinks negotiate the DEFAULT 672-byte L2CAP MTU, and
+   there libldac's own packing (tx_size 661) + our 1-byte frame-count header +
+   the 12-byte RTP header comes to 674 — so BTstack refused every send with
+   MEMORY_CAPACITY_EXCEEDED and LDAC was silently, totally dead. The caller
+   now passes the REAL usable MTU so the existing tx_size clamp packs fewer
+   frames per packet instead; that only needs this floor lowered. Sony's
+   constant is a recommendation about 2-DH5 efficiency, not a codec limit. */
 DECLFUNC int ldacBT_assert_mtu( int mtu )
 {
-    if( mtu < LDACBT_MTU_REQUIRED ){
+    if( mtu < LDACBT_MTU_MIN_USBPODS ){
         return LDACBT_ERR_ILL_MTU_SIZE;
     }
     return LDACBT_ERR_NONE;

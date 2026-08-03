@@ -1,0 +1,37 @@
+[package]
+name = "lhdcv5"
+version = "0.1.0"
+rust-version = "1.82"
+edition = "2021"
+
+# usbpods no_std port for the RP2350 (thumbv8m.main-none-eabihf):
+#  - staticlib crate-type, linked into the pico-sdk firmware
+#  - env_logger / tracing / simulator bin removed (std-only, host tooling)
+#  - log macros compiled OUT via max_level_off (zero code, zero fmt tables)
+#  - libm supplies the f64 transcendentals (twiddle/window init) core lacks
+#  - allocator + panic handler live in src/rt.rs, backed by newlib malloc/free
+#  - opt-level 2 (upstream used 0; the 1 ms LDAC-style pump cannot afford O0)
+#  - target is the SOFT-FLOAT-ABI thumbv8m.main-none-eabi: the pico-sdk
+#    builds -mfloat-abi=softfp, and an eabihf archive (VFP-register args)
+#    refuses to link against it. The codec hot path is pure integer, so the
+#    soft-float f64 init math costs microseconds once per connection.
+# Build: cargo build --release --lib --target thumbv8m.main-none-eabi
+
+[dependencies]
+libm = "0.2"
+log = { version = "0.4.27", features = ["max_level_off", "release_max_level_off"] }
+thiserror = { version = "2.0.11", default-features = false }
+zerocopy = { version = "0.8.14", default-features = false, features = ["derive"] }
+
+[lib]
+crate-type = ["rlib", "staticlib"]
+
+[profile.dev]
+overflow-checks = false
+opt-level = 2
+panic = "abort"
+
+[profile.release]
+overflow-checks = false
+opt-level = 2
+panic = "abort"

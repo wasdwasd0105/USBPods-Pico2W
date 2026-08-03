@@ -1,10 +1,14 @@
-# this will handle to macos hidden folders
-# ignore all starts with .* except .git and so on
+# macOS noise + editor state (keep git metadata and shared VS Code files)
 .*
 !.git*
 !.editorconfig
 !.vscode/launch.json
 !.vscode/settings.json
 
-# build folder
+# build output
 /build*
+/opt/
+
+# LHDC V5 Rust encoder build artifacts (cargo)
+3rd-party/lhdcv5/target/
+compile_commands.json

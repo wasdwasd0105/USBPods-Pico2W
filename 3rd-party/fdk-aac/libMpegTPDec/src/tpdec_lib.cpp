@@ -186,7 +186,7 @@ struct TRANSPORTDEC {
 #define TPDEC_SKIP_PACKET 1
 
 C_ALLOC_MEM(Ram_TransportDecoder, struct TRANSPORTDEC, 1)
-C_ALLOC_MEM(Ram_TransportDecoderBuffer, UCHAR, (8192 * 4))
+C_ALLOC_MEM(Ram_TransportDecoderBuffer, UCHAR, (8192 * 1) /* usbpods: 32K->8K, A2DP LATM pkts < 1KB */)
 
 HANDLE_TRANSPORTDEC transportDec_Open(const TRANSPORT_TYPE transportFmt,
                                       const UINT flags, const UINT nrOfLayers) {
@@ -249,7 +249,7 @@ HANDLE_TRANSPORTDEC transportDec_Open(const TRANSPORT_TYPE transportFmt,
         return NULL;
       }
       for (UINT i = 0; i < nrOfLayers; i++) {
-        FDKinitBitStream(&hInput->bitStream[i], hInput->bsBuffer, (8192 * 4), 0,
+        FDKinitBitStream(&hInput->bitStream[i], hInput->bsBuffer, (8192 * 1) /* usbpods: 32K->8K, A2DP LATM pkts < 1KB */, 0,
                          BS_READER);
       }
     }
@@ -857,7 +857,7 @@ static TRANSPORTDEC_ERROR additionalHoldOffNeeded(HANDLE_TRANSPORTDEC hTp,
   checkLengthBits = bufferFullness + (maxAU - 1) * avgBitsPerFrame;
 
   /* Check if buffer is big enough to fullfill buffer fullness condition */
-  if ((checkLengthBits /*+headerBits*/) > (((8192 * 4) << 3) - 7)) {
+  if ((checkLengthBits /*+headerBits*/) > (((8192 * 1) /* usbpods: 32K->8K, A2DP LATM pkts < 1KB */ << 3) - 7)) {
     return TRANSPORTDEC_SYNC_ERROR;
   }
 
@@ -1192,7 +1192,7 @@ static TRANSPORTDEC_ERROR synchronization(HANDLE_TRANSPORTDEC hTp,
 
     /* Check if the whole frame would fit the bitstream buffer */
     if (err == TRANSPORTDEC_OK) {
-      if ((checkLengthBits + headerBits) > (((8192 * 4) << 3) - 7)) {
+      if ((checkLengthBits + headerBits) > (((8192 * 1) /* usbpods: 32K->8K, A2DP LATM pkts < 1KB */ << 3) - 7)) {
         /* We assume that the size of the transport bit buffer has been
            chosen to meet all system requirements, thus this condition
            is considered a synchronisation error. */
@@ -1323,7 +1323,7 @@ bail:
      the bit buffer. */
   if ((totalBits > 0) && (TRANSPORTDEC_NOT_ENOUGH_BITS == err) &&
       (FDKgetValidBits(hBs) >=
-       (((8192 * 4) * 8 - ((hTp->avgBitRate * hTp->burstPeriod) / 1000)) -
+       (((8192 * 1) /* usbpods: 32K->8K, A2DP LATM pkts < 1KB */ * 8 - ((hTp->avgBitRate * hTp->burstPeriod) / 1000)) -
         7))) {
     FDKpushFor(hBs, TPDEC_SYNCSKIP);
     err = TRANSPORTDEC_SYNC_ERROR;

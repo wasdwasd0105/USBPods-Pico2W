@@ -148,7 +148,7 @@ C_ALLOC_MEM(CplxPredictionData, CCplxPredictionData, 1)
 /*! The buffer holds time samples for the crossfade in case of an USAC DASH IPF
    config change Dimension: (8)
  */
-C_ALLOC_MEM2(TimeDataFlush, PCM_DEC, TIME_DATA_FLUSH_SIZE, (8))
+C_ALLOC_MEM2(TimeDataFlush, PCM_DEC, TIME_DATA_FLUSH_SIZE, (2)) /* usbpods: stereo max */
 
 /* @} */
 
@@ -161,7 +161,11 @@ C_ALLOC_MEM2(TimeDataFlush, PCM_DEC, TIME_DATA_FLUSH_SIZE, (8))
 
 /* Take into consideration to make use of the WorkBufferCore[3/4] for decoder
  * configurations with more than 2 channels */
-C_ALLOC_MEM_OVERLAY(WorkBufferCore2, FIXP_DBL, ((8) * 1024), SECT_DATA_L2,
+/* usbpods: channel dim 8 -> 2 here and in WorkBufferCore5/TimeDataFlush.
+   A2DP is stereo max (>2ch ASCs rejected in aacdecoder.cpp); the 8-ch
+   dimensioning cost ~300 KB at aacDecoder_Open — more than the RP2350's
+   whole free heap. All consumers read the macro-generated size. */
+C_ALLOC_MEM_OVERLAY(WorkBufferCore2, FIXP_DBL, ((2) * 1024), SECT_DATA_L2,
                     WORKBUFFER2_TAG)
 
 C_ALLOC_MEM_OVERLAY(WorkBufferCore6, SCHAR,
@@ -173,5 +177,8 @@ C_ALLOC_MEM_OVERLAY(WorkBufferCore1, CWorkBufferCore1, 1, SECT_DATA_L1,
                     WORKBUFFER1_TAG)
 
 /* double buffer size needed for de-/interleaving */
-C_ALLOC_MEM_OVERLAY(WorkBufferCore5, PCM_DEC, (8) * (1024 * 4) * 2,
+/* usbpods: 1024*4 was USAC's 4096-sample frames; AAC-LC caps at 1024
+   (HE/SBR would need 2048 but is never advertised — the runtime guard in
+   aacdecoder_lib.cpp then fails that decode cleanly). 256 KB -> 16 KB. */
+C_ALLOC_MEM_OVERLAY(WorkBufferCore5, PCM_DEC, (2) * (1024) * 2,
                     SECT_DATA_EXTERN, WORKBUFFER5_TAG)

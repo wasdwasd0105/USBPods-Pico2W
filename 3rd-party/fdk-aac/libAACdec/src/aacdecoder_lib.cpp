@@ -1039,7 +1039,7 @@ LINKSPEC_CPP HANDLE_AACDECODER aacDecoder_Open(TRANSPORT_TYPE transportFmt,
 
   aacDec->hLimiter =
       pcmLimiter_Create(TDL_ATTACK_DEFAULT_MS, TDL_RELEASE_DEFAULT_MS,
-                        (FIXP_DBL)MAXVAL_DBL, (8), 96000);
+                        (FIXP_DBL)MAXVAL_DBL, (2) /* usbpods: stereo max */, 96000);
   if (NULL == aacDec->hLimiter) {
     err = -1;
     goto bail;

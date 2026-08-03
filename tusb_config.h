@@ -96,12 +96,44 @@ extern "C" {
 #endif
 
 //------------- CLASS -------------//
-#define CFG_TUD_CDC               0
+
+/* DUAL-CONFIGURATION device: config A = UAC2, config B = UAC1 (both always
+   present, like commercial dual-class headsets). Hosts default to the FIRST
+   configuration; the other is selectable per host (Linux sysfs, console
+   headset drivers). USB_UAC1_FIRST=1 flips the order so legacy hosts get
+   UAC1 by default. The UAC1 function is served by the app class driver in
+   uac1_device.c (TinyUSB's audio driver is UAC2-only); each driver claims
+   only its own protocol, so both coexist in one firmware. */
+#ifndef USB_UAC1_FIRST
+#define USB_UAC1_FIRST            0
+#endif
+
+#define CFG_TUD_CDC               1   /* USB serial console (bye, UART dongle) */
+#define CFG_TUD_CDC_RX_BUFSIZE    256
+#define CFG_TUD_CDC_TX_BUFSIZE    512
+#define CFG_TUD_CDC_EP_BUFSIZE    64
 #define CFG_TUD_MSC               0
-#define CFG_TUD_HID               0
+#define CFG_TUD_HID               1
+#define CFG_TUD_HID_EP_BUFSIZE    256  /* saved-list report 8 is 241 B */  /* also sizes the CONTROL buffer for
+   GET/SET_REPORT: hid_device.c clamps req_len to this, so it must cover the
+   LARGEST feature report (saved-list = 80 B + ID) or the GET stalls and the
+   web UI sticks on Loading. Media-key interrupt reports stay tiny. */
 #define CFG_TUD_MIDI              0
 #define CFG_TUD_AUDIO             1
+#define CFG_TUD_VENDOR            1   /* WebUSB config channel: a vendor-class
+                                        interface with NO endpoints — the config
+                                        protocol runs over EP0 control transfers
+                                        (tud_vendor_control_xfer_cb), so Android
+                                        Chrome (WebUSB) reaches the same commands
+                                        as desktop WebHID. No endpoint budget. */
+/* unused (0 endpoints) but the vendor driver still allocates these FIFOs */
+#define CFG_TUD_VENDOR_RX_BUFSIZE 64
+#ifdef USBPODS_LITE            /* Lite: the WebUSB/WebHID config channel is a
+                                  Full feature — no vendor interface at all */
+#undef  CFG_TUD_VENDOR
 #define CFG_TUD_VENDOR            0
+#endif
+#define CFG_TUD_VENDOR_TX_BUFSIZE 64
 
 //--------------------------------------------------------------------
 // AUDIO CLASS DRIVER CONFIGURATION

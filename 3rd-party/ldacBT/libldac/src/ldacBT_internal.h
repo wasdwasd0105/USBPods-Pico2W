@@ -54,6 +54,10 @@ extern "C" {
 #define LDACBT_TX_HEADER_SIZE 18
 /* The MTU size required for LDAC A2DP streaming. */
 #define LDACBT_MTU_REQUIRED  679
+/* usbpods: floor actually enforced — see ldacBT_assert_mtu(). 679 rejects the
+   very common 672-byte-MTU link, on which LDAC must simply pack fewer frames
+   per packet. 200 still leaves room for a whole frame at every EQMID. */
+#define LDACBT_MTU_MIN_USBPODS 200
 #define LDACBT_MTU_3DH5 (990+LDACBT_TX_HEADER_SIZE)
 
 /* The state for alter operation */

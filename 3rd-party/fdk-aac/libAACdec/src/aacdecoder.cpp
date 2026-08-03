@@ -1710,7 +1710,9 @@ CAacDecoder_Init(HANDLE_AACDECODER self, const CSAudioSpecificConfig *asc,
   aacChannelsOffset = 0;
   aacChannelsOffsetIdx = 0;
   elementOffset = 0;
-  if ((ascChannels <= 0) || (ascChannels > (8)) ||
+  /* usbpods: reject >stereo ASCs — the work buffers are dimensioned for 2
+     channels now (aac_ram.cpp); A2DP never carries more. */
+  if ((ascChannels <= 0) || (ascChannels > (2)) ||
       (asc->m_channelConfiguration > AACDEC_MAX_CH_CONF)) {
     return AAC_DEC_UNSUPPORTED_CHANNELCONFIG;
   }
@@ -2785,58 +2787,20 @@ LINKSPEC_CPP AAC_DECODER_ERROR CAacDecoder_DecodeFrame(
         }
 
         if (self->frameOK) {
-          CAacDecoderCommonData commonData;
-          CAacDecoderCommonStaticData commonStaticData;
-          CWorkBufferCore1 workBufferCore1;
-          commonStaticData.pWorkBufferCore1 = &workBufferCore1;
-          /* memory for spectral lines temporal on scratch */
-          C_AALLOC_SCRATCH_START(mdctSpec, FIXP_DBL, 1024);
-
-          /* create dummy channel for CCE parsing on stack */
-          CAacDecoderChannelInfo tmpAacDecoderChannelInfo,
-              *pTmpAacDecoderChannelInfo;
-
-          FDKmemclear(mdctSpec, 1024 * sizeof(FIXP_DBL));
-
-          tmpAacDecoderChannelInfo.pDynData = commonData.pAacDecoderDynamicData;
-          tmpAacDecoderChannelInfo.pComData = &commonData;
-          tmpAacDecoderChannelInfo.pComStaticData = &commonStaticData;
-          tmpAacDecoderChannelInfo.pSpectralCoefficient =
-              (SPECTRAL_PTR)mdctSpec;
-          /* Assume AAC-LC */
-          tmpAacDecoderChannelInfo.granuleLength =
-              self->streamInfo.aacSamplesPerFrame / 8;
-          /* Reset PNS data. */
-          CPns_ResetData(
-              &tmpAacDecoderChannelInfo.data.aac.PnsData,
-              &tmpAacDecoderChannelInfo.pComData->pnsInterChannelData);
-          pTmpAacDecoderChannelInfo = &tmpAacDecoderChannelInfo;
-          /* do CCE parsing */
-          ErrorStatus = CChannelElement_Read(
-              bs, &pTmpAacDecoderChannelInfo, NULL, self->streamInfo.aot,
-              &self->samplingRateInfo[streamIndex], self->flags[streamIndex],
-              AC_EL_GA_CCE, self->streamInfo.aacSamplesPerFrame, 1,
-              self->streamInfo.epConfig, self->hInput);
-
-          C_AALLOC_SCRATCH_END(mdctSpec, FIXP_DBL, 1024);
-
-          if (ErrorStatus) {
-            self->frameOK = 0;
-          }
-
-          if (self->frameOK) {
-            /* Lookup the element and decode it only if it belongs to the
-             * current program */
-            if (CProgramConfig_LookupElement(
-                    pce, self->streamInfo.channelConfig,
-                    pTmpAacDecoderChannelInfo->ElementInstanceTag, 0,
-                    self->chMapping, self->channelType, self->channelIndices,
-                    (8), &previous_element_index, self->elements, type)) {
-              /* decoding of CCE not supported */
-            } else {
-              self->frameOK = 0;
-            }
-          }
+          /* usbpods: upstream PARSES the CCE here (decode is unsupported
+             anyway) using a dummy channel whose scratch — a ~32 KB
+             CWorkBufferCore1 union + CAacDecoderCommonData + ChannelInfo —
+             gave EVERY DecodeFrame call a ~34.5 KB entry frame (GCC folds
+             block locals into the frame): a silent per-frame heap-top
+             stomp on the unguarded 4 KB stack (the right-channel
+             full-scale "pi-pi-pi" during relay), an MSPLIM STKOF once
+             guarded, and ~35 KB of dead .bss when made static (which then
+             OOM'd the decoder's config allocs -> endless 0x1001). A2DP
+             audio NEVER carries CCE, so treat it as a frame error — same
+             handling as the consistency check above; concealment covers
+             the (never-seen-in-practice) frame. */
+          ErrorStatus = AAC_DEC_DECODE_FRAME_ERROR;
+          self->frameOK = 0;
         }
         el_cnt[type]++;
         break;

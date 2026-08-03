@@ -1,139 +1,236 @@
-# PicoW USB Audio to Bluetooth Adapter
-The Pico W USB Audio to Bluetooth Adapter transforms your Raspberry Pi Pico W into a high-quality audio streaming device.
-With Pico W Adapter, you can easily transmit audio wirelessly from your USB audio source to your Bluetooth headphones or speaker, enhancing your listening experience.
-Support LDAC and apple AAC-ELD for airpods!
+# USBPods Lite — Pico 2 W USB to Bluetooth Audio
 
+Open-source firmware that turns a **Raspberry Pi Pico 2 W** (or the Waveshare
+**RP2350B-Plus-W** USB dongle — one universal binary covers both) into a
+driver-free USB sound card that streams to Bluetooth headphones with the
+hi-res codecs ordinary dongles never ship.
+
+Plug it into any computer, console or handheld with a USB port. No app, no
+driver, no pairing dance on the host — the dongle owns the Bluetooth link, so
+the host just sees a sound card.
+
+This is the RP2350 successor of the original PicoW-usb2bt-audio project that
+lived in this repo ([video demo](http://www.youtube.com/watch?v=Dilagi7l4xc)
+of the original Pico W version). The RP2040 Pico W is **not** supported by
+this firmware — see the older tags for that board.
 
 <p align="center">
 <img alt="Logo" src="logo.png" width="200">
 </p>
 
-### Driver-Free Setup
-Setting up PicoW requires no driver or software installation. Simply plug the Pico W into your device's USB port, set your Bluetooth headphones or speakers to pairing mode, and an automatic connection will be made.
+## Features
 
+- **Driver-free**: enumerates as a standard USB sound card — USB Audio Class 2,
+  plus a legacy **UAC 1** personality for consoles/KVMs that reject UAC2, at a
+  48 kHz or 44.1 kHz pipeline.
+- **Codecs**: SBC, AAC-LC, **AAC-ELD** (the low-latency Apple mode that makes
+  AirPods sound their best), **LDAC** and **LHDC V5** — see the table below.
+  Each one can be switched off so you can force the negotiation down a rung.
+- **Media keys**: play/pause/skip pressed on the headset reach the computer as
+  USB consumer-control keys, and absolute volume is synced both ways.
+- **Two device slots** with instant switching, plus auto-connect at power-on.
+- **Serial console** on the USB CDC port: the whole product UI in one
+  keystroke-per-action screen, no software to install.
 
-### Multiple Bluetooth Codecs
-Pico W Bluetooth Adapter utilizes multiple codecs to deliver high-quality audio. 
+### Codecs
 
-#### LDAC
-The input is 16-bit 48000Hz PCM audio, and it can steam LDAC audio at 303(Mobile Quality) on Pico W and 606(Standard Quality) Kbps/ 909 Kbps on Pico 2 W.
+| Codec | Rates | Notes |
+|---|---|---|
+| SBC | joint stereo, negotiated bitpool | the A2DP baseline, always available |
+| AAC-LC | CBR, up to the sink's ceiling | rate follows what the headset asks for |
+| AAC-ELD | 128–320 kbps | AirPods low-latency mode; big latency win on Apple gear |
+| LDAC | 330 / 660 / 990 kbps | retunes **live** — no reconnect to change quality |
+| LHDC V5 | 256 / 400 / 500 kbps | 5 ms frames; also retunes live |
 
-#### AAC
-Only work on Pico 2 W. The input is 16-bit 48000Hz PCM audio, and use fdk-acc to encode the aac.
+The dongle offers every enabled codec and takes the best one the headset
+accepts. What actually got negotiated — and the rate it is running at right
+now — is on the console's status line.
 
-#### AAC-ELD
-The secret makes AirPods have significant better sound quality on iOS/MacOS
+AAC-ELD is Apple's undocumented vendor codec; the wire format we reverse
+engineered for it is written up in
+[aac-eld-apple.md](aac-eld-apple.md) — capability bytes, the millisecond-based
+RTP timestamps, and the per-frame size headers.
 
+## Lite vs Full
 
-#### SBC
-Ready to use: There is a [sbc only project](https://github.com/wasdwasd0105/PicoW-usb2bt-audio-sbc/) that can learn how btstack and tinyusb work on Pico W
+This repo is the free **Lite** firmware. The **Full** firmware at
+[usbpods.com](https://usbpods.com) adds:
 
+| | Lite | Full |
+|---|---|---|
+| Codecs, audio pipeline, media keys | ✅ full quality | ✅ same |
+| Configuration | serial console | console **+ browser UI** (WebHID/WebUSB, nothing to install) |
+| Remembered headsets | 2 (the slots) | 8, assignable to either slot |
+| AirPods extras over AACP | — | battery, noise-control modes, gaming latency, in-ear pause |
+| Phone relay (phone audio mixed into the same headphones) | — | ✅ |
+| USB connect modes (audio follows headset / auto-dial on playback) | — | ✅ |
+| Firmware updates | copy a UF2 | one click in the browser |
 
-
-### Video demo
-
-[![video demo](http://img.youtube.com/vi/Dilagi7l4xc/0.jpg)](http://www.youtube.com/watch?v=Dilagi7l4xc "")
-
+The web UI recognizes a Lite dongle and offers the upgrade path.
 
 ## Installation
 
-Installing the Pico W USB Audio to Bluetooth Adapter firmware involves flashing a UF2 (USB Flashing Format) file onto your Raspberry Pi Pico. Follow these steps:
-
-1. **Download the UF2 file:** You can find the latest firmware for the PicoW USB Audio to Bluetooth Adapter at the [releases page](https://github.com/wasdwasd0105/PicoW-usb2bt-audio/releases) of the GitHub repository. Download the `.uf2` file from the latest release.
-
-2. **Connect the Pico to your computer:** First, ensure that your Pico is not connected to your computer. Then, hold down the 'BOOTSEL' button on the Pico while you plug it into your computer using a micro USB cable. It will appear on your computer as a mass storage device (like a USB flash drive).
-
-3. **Copy the UF2 file:** Simply drag and drop (or copy and paste) the downloaded UF2 file onto the Pico.
-
-4. **Reset the Pico:** Once the UF2 file has been copied onto the Pico, it will automatically reset and start running the new firmware.
-
-
+1. Download `USBPods_Pico2W_Lite.uf2` from the
+   [releases page](https://github.com/wasdwasd0105/USBPods-Pico2W/releases)
+   (or build it yourself, below).
+2. Hold **BOOTSEL** while plugging the board in — it appears as an `RP2350`
+   drive.
+3. Copy the UF2 onto the drive; the board reboots into the firmware.
 
 ## Usage
 
-Using the PicoW USB Audio to Bluetooth Adapter is a straightforward process. Here are the steps to follow:
+1. Select the **USBPods Lite** audio output on your computer.
+2. Put your headphones in pairing mode — the dongle scans and connects on its
+   own. Afterwards it reconnects at power-on.
+3. For anything else, open the serial console: any terminal on the USB CDC
+   port, e.g. `screen /dev/tty.usbmodem*` (macOS/Linux) or PuTTY on the COM
+   port (Windows). Press **Enter** for the menu.
 
-1. **Connect your Pico W to your audio source device:** Use a USB cable to connect your Raspberry Pi Pico W to the device that you want to stream audio from.
+### Console keys
 
-2. **Set the audio output on your source device:** On your audio source device, go to your sound settings and change the audio output device to `TinyUSB BT`.
+| | |
+|---|---|
+| `Enter` `h` | show the menu (status, slots, settings) |
+| `,` `.` `/` | next track · previous track · play/pause |
+| `[` `]` | volume up · down |
+| `c` `d` | connect · disconnect |
+| `p` | **pair new earbuds** into the current slot |
+| `1` `2` | switch to slot 1 / 2 (dials it if a headset is stored) |
+| `l` | list the paired devices |
+| `r` | forget everything (link keys and slot records) |
+| `w` | auto-connect at power-on on/off |
+| `u` | USB audio mode: UAC2 ⇄ UAC1 (re-enumerates) |
+| `k` | USB sample rate: 48 ⇄ 44.1 kHz (re-enumerates) |
+| `b` | earbud button action while connected |
+| `q` | LDAC quality: 660 → 990 → 330 kbps |
+| `e` | LHDC bitrate: 400 → 500 → 256 kbps |
+| `5` `6` `7` `8` | enable/disable AAC-ELD · LHDC V5 · LDAC · AAC |
+| `H` `D` | advanced menu · persistent debug logging |
 
-3. **Pairing a new device:** To pair a new device, long press the 'BOOTSEL' button on the Pico W and release it the led light will blink fast. Then, put the new Bluetooth device into pairing mode. The Pico W will automatically connect to it.
+Settings are stored in flash and survive reboots. Codec toggles apply at the
+next connection — a running stream is never torn down under you. LDAC and LHDC
+rate changes apply immediately, mid-stream.
 
-4. **Start playing audio:** Once everything is set up, you can start playing audio from your source device. The audio will be streamed to your Bluetooth device via the Pico W.
+In Lite each slot **owns** its headset: pairing a new device into a slot
+forgets the one it replaces, link key included.
 
-5. **Reconnecting a device:** You can connect/reconnect the headphone by short pressing the 'BOOTSEL' button when it is not streaming audio (LED light not blinking)
+### Status LED
 
-7. If you press the key for times but it has no response. It means it is crash. Please reconnect the USB. 
+| Pattern | Meaning |
+|---|---|
+| solid | idle / connected, nothing playing |
+| one blink, pause | connecting slot 1 |
+| two blinks, pause | connecting slot 2 |
+| fast flash | pairing scan running |
+| slow flash | audio streaming |
 
-8. starting at v0.8 the program can remember 2 devices. When connected to USB the led will blink for 2 times fast for device A and 3 times fast for device B. 
+## Building
 
-     Double press the 'BOOTSEL' button can switch the device A or B and led will blink 2/3 times correspond to A/B.
+Requirements:
 
-     After any bluetooth connection, switching device will not be available until reconnect the USB
+- **pico-sdk 2.1.1** — the VS Code Raspberry Pi Pico extension layout under
+  `~/.pico-sdk` works out of the box (or set `PICO_SDK_PATH`).
+- **sdk patches** — the build refuses to configure until the local pico-sdk
+  patches are applied; see [sdk-patches/README.md](sdk-patches/README.md).
+  They fix BTstack/TinyUSB behaviour the firmware depends on, and a stock SDK
+  silently changes wire behaviour rather than failing to compile.
+- **Rust** for the LHDC V5 encoder crate, with the soft-float Cortex-M33
+  target:
 
-9. When connected: single press key-> volume+; double press key-> volume-
+  ```
+  rustup target add thumbv8m.main-none-eabi
+  ```
 
+Then:
 
+```
+cmake -B build -G Ninja
+ninja -C build
+```
 
-## Green LED light Status Indicator
+The result is `build/USBPods_Pico2W_Lite.uf2`.
 
-1. **Blinking Slow (1s):** When the Green LED light is blinking slow, it indicates that audio is currently streaming. Different LED light on time means different streaming mode:
+### How the two editions share one tree
 
-     | LED on time | codec |
-     |-------------|-------|
-     | 0.2s        | AAC   |
-     | 3s          | LDAC / AAC-ELD  |
-     | 1s          | SBC   |
+The Full version's proprietary modules (browser config channel, AACP client,
+phone relay, license system) live in a private repo mounted at `private/` as a
+git submodule. CMake detects it:
 
-2. **Blinking Fast (0.5s):** It means that the PicoW Adapter is in pairing mode.
+- **no `private/`** → builds Lite automatically, no flags. An uninitialized
+  `private/` is the normal open-source state, not an error.
+- **with `private/`** → both editions build side by side —
+  `cmake -B build-full -G Ninja` for Full, `-DUSBPODS_LITE=ON` for Lite.
 
-3. **On (Steady Light):** It means that the PicoW Adapter is on standby. Short-press the key to reconnect the last saved device.
+Lite compiles `src/lite_stubs.c` in place of those modules, so the shared code
+carries no `#ifdef` clutter.
 
+### Source layout
 
+| Path | |
+|---|---|
+| `src/main.c` | boot, core assignment, main loop |
+| `src/console.c` | the serial-console product UI |
+| `src/settings.c` | flash-backed settings (wear-levelled append store) |
+| `src/btstack/btstack_hci.c` | radio bring-up, pairing, link keys |
+| `src/btstack/btstack_avdtp_source.c` | A2DP/AVRCP transport, pump, recovery |
+| `src/btstack/codec/` | one file per codec + the registry that ranks them |
+| `src/tinyusb/` | UAC2/UAC1 audio, CDC console, descriptors |
+| `3rd-party/` | fdk-aac, libldac, LHDC V5 (Rust) |
+| `sdk-patches/` | required pico-sdk patches |
 
-## Compile & Debug
+Adding a codec is one file in `src/btstack/codec/` plus one line in
+`codec_registry.c`; nothing else in the firmware changes.
 
-In order to compile the PicoW USB Audio to Bluetooth Adapter firmware from source code, you need to follow these steps:
+## Contributing
 
-1. **Prepare your environment:** Use VS Code and Raspberry Pi Pico extension
-
-2. **Import the project on the Raspberry Pi Pico extension:** Import the project using General -> Import Project
-
-Choose Pico W or Pico 2 W using Switch Board
-
-Then you can Debug, Compile and Run the project on the Project tab
-
-3. **Debug Serial input/output:** You can use uart to see the debug info. Connect the GPIO 0 and 1 as TX and RX. To enable BTstack's serial input, you can uncomment `HAVE_BTSTACK_STDIN` under btstack_config.h
-
+Bug reports, test results with your headsets, and pull requests are welcome —
+see [CONTRIBUTING.md](CONTRIBUTING.md) (note the relicensing grant, needed
+because most files are shared with the commercial edition).
 
 ## Acknowledgments
 
-This project wouldn't have been possible without the foundational work provided by the following projects:
+This project wouldn't have been possible without the foundational work of:
 
-1. [tinyusb uac2_headset](https://github.com/hathach/tinyusb/tree/master/examples/device/uac2_headset): Tinyusb UAC2 headset demo
-
-2. [a2dp_source_demo](https://github.com/bluekitchen/btstack/blob/master/example/a2dp_source_demo.c): The Advanced Audio Distribution Profile (A2DP) source demo provided by the BTstack.
-
-3. [avdtp_source_test.c](https://github.com/bluekitchen/btstack/tree/v1.5.4/test/pts): The Audio tests (avdtp_source_test.c and avdtp_sink_test) support the folowing audio codecs: SBC, AAC, aptX, and LDAC.
-
+1. [tinyusb uac2_headset](https://github.com/hathach/tinyusb/tree/master/examples/device/uac2_headset): TinyUSB UAC2 headset demo
+2. [a2dp_source_demo](https://github.com/bluekitchen/btstack/blob/master/example/a2dp_source_demo.c): BTstack's A2DP source demo
+3. [avdtp_source_test.c](https://github.com/bluekitchen/btstack/tree/v1.5.4/test/pts): BTstack audio tests (SBC, AAC, aptX, LDAC)
 
 ## License
 
-This project is licensed under the terms of the Apache License 2.0.
+Copyright (C) 2023-2026 wasdwasd0105
 
+The USBPods firmware in this repository is licensed under
+**GPL-3.0-only** (see [LICENSE.txt](LICENSE.txt)), with an
+[additional permission under GPLv3 section 7](LICENSE-EXCEPTIONS.md)
+that allows building and distributing binaries linked against the
+bundled codec libraries and the Pico SDK stack. Without that exception
+a GPL firmware could not legally ship with FDK-AAC inside — read it
+before redistributing binaries.
 
-## Copyright
+The commercial **USBPods Full** firmware is a separate product by the
+same copyright holder and is not covered by this license.
+
+Bundled third-party code keeps its own licenses:
+
+- **BTstack** — comes with the pico-sdk under BlueKitchen's license terms
+  for Raspberry Pi silicon
+- **TinyUSB** — MIT
+- **FDK-AAC** — Fraunhofer FDK AAC Codec Library for Android license
+  (`3rd-party/fdk-aac/NOTICE`; GPL-incompatible on its own, covered by
+  the linking exception)
+- **LHDC V5 encoder** — Apache-2.0 (AOSP-derived Rust reimplementation,
+  `3rd-party/lhdcv5`)
 
 ### libldac: https://android.googlesource.com/platform/external/libldac
 ```
  Copyright (C) 2013 - 2016 Sony Corporation
- 
+
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
   You may obtain a copy of the License at
- 
+
        http://www.apache.org/licenses/LICENSE-2.0
- 
+
   Unless required by applicable law or agreed to in writing, software
   distributed under the License is distributed on an "AS IS" BASIS,
   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -169,5 +266,5 @@ NOTICE
   limitations under the License.
 ```
 
-
 ### FDK AAC: https://github.com/mstorsjo/fdk-aac
+See `3rd-party/fdk-aac/NOTICE` for the Fraunhofer FDK AAC license.

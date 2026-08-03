@@ -460,6 +460,11 @@ endif()
 add_library(fdk-aac ${libfdk_aac_SOURCES})
 add_library(FDK-AAC::fdk-aac ALIAS fdk-aac)
 
+## usbpods: CAacDecoder_DecodeFrame's ID_CCE parse branch declared a ~32 KB
+## CWorkBufferCore1 union (+ friends) as STACK locals, giving EVERY call a
+## ~34.5 KB entry frame (sub sp, #35328) — see the patch in
+## libAACdec/src/aacdecoder.cpp (now statics; frame is ~4.4 KB).
+
 ## Library target configuration
 
 ### Library target includes
