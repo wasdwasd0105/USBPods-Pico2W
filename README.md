@@ -21,8 +21,7 @@ this firmware — see the older tags for that board.
 ## Features
 
 - **Driver-free**: enumerates as a standard USB sound card — USB Audio Class 2,
-  plus a legacy **UAC 1** personality for consoles/KVMs that reject UAC2, at a
-  48 kHz or 44.1 kHz pipeline.
+  plus a legacy **UAC 1**, at a 48 kHz or 44.1 kHz sample rate.
 - **Codecs**: SBC, AAC-LC, **AAC-ELD** (the low-latency Apple mode that makes
   AirPods sound their best), **LDAC** and **LHDC V5** — see the table below.
   Each one can be switched off so you can force the negotiation down a rung.
@@ -38,9 +37,9 @@ this firmware — see the older tags for that board.
 |---|---|---|
 | SBC | joint stereo, negotiated bitpool | the A2DP baseline, always available |
 | AAC-LC | CBR, up to the sink's ceiling | rate follows what the headset asks for |
-| AAC-ELD | 128–320 kbps | AirPods low-latency mode; big latency win on Apple gear |
+| AAC-ELD | 256 kbps | AirPods low-latency mode; big latency win on Apple gear |
 | LDAC | 330 / 660 / 990 kbps | retunes **live** — no reconnect to change quality |
-| LHDC V5 | 256 / 400 / 500 kbps | 5 ms frames; also retunes live |
+| LHDC V5 | 256 / 400 / 500 kbps | also retunes live |
 
 The dongle offers every enabled codec and takes the best one the headset
 accepts. What actually got negotiated — and the rate it is running at right
@@ -53,8 +52,7 @@ RTP timestamps, and the per-frame size headers.
 
 ## Lite vs Full
 
-This repo is the free **Lite** firmware. The **Full** firmware at
-[usbpods.com](https://usbpods.com) adds:
+This repo is the free **Lite** firmware. The **Full** firmware at **Under Development** adds:
 
 | | Lite | Full |
 |---|---|---|
@@ -137,16 +135,15 @@ Requirements:
 - **Rust** for the LHDC V5 encoder crate, with the soft-float Cortex-M33
   target:
 
-  ```
   rustup target add thumbv8m.main-none-eabi
-  ```
+```raw
 
 Then:
 
 ```
 cmake -B build -G Ninja
 ninja -C build
-```
+```raw
 
 The result is `build/USBPods_Pico2W_Lite.uf2`.
 
@@ -236,7 +233,7 @@ Bundled third-party code keeps its own licenses:
   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
   See the License for the specific language governing permissions and
   limitations under the License.
-```
+```raw
 
 NOTICE
 ```
@@ -247,7 +244,7 @@ NOTICE
    For the detail of certification process, see the following URL:
       https://www.sony.net/Products/LDAC/aosp/
 
-```
+```raw
 
 ### ldacBT: https://github.com/EHfive/ldacBT
 ```
@@ -264,7 +261,9 @@ NOTICE
   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
   See the License for the specific language governing permissions and
   limitations under the License.
-```
+```raw
 
 ### FDK AAC: https://github.com/mstorsjo/fdk-aac
 See `3rd-party/fdk-aac/NOTICE` for the Fraunhofer FDK AAC license.
+
+```
