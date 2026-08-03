@@ -135,15 +135,16 @@ Requirements:
 - **Rust** for the LHDC V5 encoder crate, with the soft-float Cortex-M33
   target:
 
+  ```
   rustup target add thumbv8m.main-none-eabi
-```raw
+  ```
 
 Then:
 
 ```
 cmake -B build -G Ninja
 ninja -C build
-```raw
+```
 
 The result is `build/USBPods_Pico2W_Lite.uf2`.
 
@@ -233,7 +234,7 @@ Bundled third-party code keeps its own licenses:
   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
   See the License for the specific language governing permissions and
   limitations under the License.
-```raw
+```
 
 NOTICE
 ```
@@ -244,7 +245,7 @@ NOTICE
    For the detail of certification process, see the following URL:
       https://www.sony.net/Products/LDAC/aosp/
 
-```raw
+```
 
 ### ldacBT: https://github.com/EHfive/ldacBT
 ```
@@ -261,9 +262,7 @@ NOTICE
   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
   See the License for the specific language governing permissions and
   limitations under the License.
-```raw
+```
 
 ### FDK AAC: https://github.com/mstorsjo/fdk-aac
 See `3rd-party/fdk-aac/NOTICE` for the Fraunhofer FDK AAC license.
-
-```
