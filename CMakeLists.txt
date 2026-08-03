@@ -113,19 +113,14 @@ set(BTSTACK_3RD_PARTY_PATH ${PICO_SDK_PATH}/lib/btstack/3rd-party)
 # KVMs) get UAC1 as configuration 1: cmake -B build-uac1 -DUSB_UAC1_FIRST=ON
 option(USB_UAC1_FIRST "UAC1 as the default (first) USB configuration" OFF)
 
-# ---- variant: FULL (private overlay) vs LITE (open-source) ----------------
-# The proprietary modules (WebHID/WebUSB config channel, AirPods AACP client,
-# license system) live in a separate PRIVATE repo, mounted at private/ as a
-# git submodule. Without access to it this tree builds the LITE variant —
-# that is the normal open-source configuration, not an error. With the
-# submodule initialized (git submodule update --init) both variants build
-# side by side:
-#   cmake -B build-full -G Ninja                     -> FULL
-#   cmake -B build-lite -G Ninja -DUSBPODS_LITE=ON   -> LITE
-option(USBPODS_LITE "Build the open-source Lite variant (no WebHID/AACP/license)" OFF)
+# ---- build variant --------------------------------------------------------
+# This tree builds the open-source firmware. Optional vendor add-ons may be
+# dropped in at private/; when they are absent (the normal case) the build
+# simply proceeds without them.
+option(USBPODS_LITE "Build the open-source variant" OFF)
 if(NOT EXISTS ${CMAKE_CURRENT_LIST_DIR}/private/full.cmake)
     set(USBPODS_LITE ON)
-    message(STATUS "usbpods: private/ overlay not present -> LITE build")
+    message(STATUS "usbpods: building the open-source variant")
 endif()
 if(USBPODS_LITE)
     set(USBPODS_VARIANT_SOURCES      src/lite_stubs.c)
@@ -136,8 +131,6 @@ if(USBPODS_LITE)
     set(USBPODS_CHANNEL_DIR lite)   # never feeds the dev/production updaters
     message(STATUS "usbpods variant: LITE")
 else()
-    # Sets USBPODS_VARIANT_{SOURCES,INCLUDE_DIRS,DEFINES}, USBPODS_OUT_NAME
-    # and USBPODS_CHANNEL_DIR (RELEASE_CHANNEL dev/production key selection).
     include(${CMAKE_CURRENT_LIST_DIR}/private/full.cmake)
     message(STATUS "usbpods variant: FULL")
 endif()

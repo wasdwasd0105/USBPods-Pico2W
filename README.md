@@ -148,19 +148,6 @@ ninja -C build
 
 The result is `build/USBPods_Pico2W_Lite.uf2`.
 
-### How the two editions share one tree
-
-The Full version's proprietary modules (browser config channel, AACP client,
-phone relay, license system) live in a private repo mounted at `private/` as a
-git submodule. CMake detects it:
-
-- **no `private/`** → builds Lite automatically, no flags. An uninitialized
-  `private/` is the normal open-source state, not an error.
-- **with `private/`** → both editions build side by side —
-  `cmake -B build-full -G Ninja` for Full, `-DUSBPODS_LITE=ON` for Lite.
-
-Lite compiles `src/lite_stubs.c` in place of those modules, so the shared code
-carries no `#ifdef` clutter.
 
 ### Source layout
 

@@ -12,3 +12,6 @@
 # LHDC V5 Rust encoder build artifacts (cargo)
 3rd-party/lhdcv5/target/
 compile_commands.json
+
+# optional vendor add-ons (not part of this repo)
+/private/
