@@ -87,5 +87,3 @@ uint8_t aap_game_jitter(void){ return 90; }        /* full: settings game_level 
 uint32_t aap_last_lock_ms(void){ return 0; }       /* never held the BT lock */
 volatile bool aap_rx_log = false;                  /* 'A' key raw-frame logging */
 
-/* No vendor add-ons in this build: the stored AAC-ELD bitrate applies as-is. */
-uint8_t eld_rate_effective(uint8_t stored) { return stored; }

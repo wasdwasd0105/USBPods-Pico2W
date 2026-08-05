@@ -78,9 +78,6 @@ void a2dp_source_note_send(uint8_t rc);      /* count/report a failed media send
 const uint8_t *a2dp_source_peer_addr(void);  /* who is ACTUALLY connected (not the
                                                 dial target from the slot) */
 uint32_t a2dp_source_live_kbps(void);  /* on-air rate of the current codec, 0 = unknown */
-/* The AAC-ELD bitrate setting as it should actually be applied. Optional
-   vendor add-ons may clamp it; this build returns it unchanged (lite_stubs.c). */
-uint8_t eld_rate_effective(uint8_t stored);
 void bt_link_tx_power(uint16_t con_handle, int8_t dbm); /* CYW43 vendor cap */
 
 void avdtp_source_establish_stream();
