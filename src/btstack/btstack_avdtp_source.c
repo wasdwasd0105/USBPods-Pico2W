@@ -1230,6 +1230,16 @@ static uint8_t src_eld_vbr_now(void) {
     if (settings()->eld_rate == 1 || settings()->eld_rate == 3) return 0;
     return src_eld_vbr_mode;
 }
+/* SBR only rides the VBR path. FDK's own ELD/SBR auto-config table
+   (eldSbrAutoConfigTab) drops SBR for 2ch/48k at >=128 kbps, so forcing it
+   on at a CBR rate leaves the quantizer a budget it cannot meet: the rate
+   loop in FDKaacEnc_QCMain (qc_main.cpp, while(!quantizationDone) /
+   do..while(!constraintsFulfilled)) then never converges and never returns.
+   HW 2026-08-06: hung there in game mode (CBR 192k + SBR) with real music,
+   caught over SWD — BT-IRQ stuck inside aacEncEncode, run loop starved,
+   watchdog reset, bootloop. VBR has the slack to absorb SBR's overhead,
+   which is why the 256k Apple-parity path has been stable for days. */
+static uint8_t src_eld_sbr_now(void){ return src_eld_vbr_now() ? src_eld_sbr : 0; }
 static int src_eld_au_space(void) {
     /* budget the LARGEST possible AU: under VBR that is the peak cap, not
        the average — a peak AU past the packet budget would oversize L2CAP */
@@ -1678,8 +1688,8 @@ void a2dp_source_main_work(void) {
         aacEncoder_SetParam(handleAAC, AACENC_SAMPLERATE, 48000);
         aacEncoder_SetParam(handleAAC, AACENC_CHANNELMODE, 2);
         aacEncoder_SetParam(handleAAC, AACENC_GRANULE_LENGTH, 480);
-        aacEncoder_SetParam(handleAAC, AACENC_SBR_MODE, src_eld_sbr);
-        if (src_eld_sbr)
+        aacEncoder_SetParam(handleAAC, AACENC_SBR_MODE, src_eld_sbr_now());
+        if (src_eld_sbr_now())
             aacEncoder_SetParam(handleAAC, AACENC_SBR_RATIO, 1);
         aacEncoder_SetParam(handleAAC, AACENC_BITRATEMODE, src_eld_vbr_now());
         if (src_eld_vbr_now())
@@ -2984,11 +2994,11 @@ static void packet_handler_inner(uint8_t packet_type, uint16_t channel, uint8_t 
                     printf("Couldn't set AAC-ELD frame size: %d\n", err);
                     break;
                 }
-                if ((err = aacEncoder_SetParam(handleAAC, AACENC_SBR_MODE, src_eld_sbr)) != AACENC_OK) {
+                if ((err = aacEncoder_SetParam(handleAAC, AACENC_SBR_MODE, src_eld_sbr_now())) != AACENC_OK) {
                     printf("Couldn't set AAC-ELD SBR mode: %d\n", err);
                     break;
                 }
-                if (src_eld_sbr &&
+                if (src_eld_sbr_now() &&
                     (err = aacEncoder_SetParam(handleAAC, AACENC_SBR_RATIO, 1)) != AACENC_OK) {
                     printf("Couldn't set AAC-ELD SBR ratio: %d\n", err);
                     break;
