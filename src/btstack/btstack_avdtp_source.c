@@ -1170,7 +1170,7 @@ static uint32_t src_eld_bitrate(void) {
     uint32_t r;
     if (aap_get_game()) r = 192000;      /* gaming: smallest AUs — latency over fidelity
                                             (overrides the menu, setting untouched) */
-    else switch (settings()->eld_rate) {
+    else switch (eld_rate_effective(settings()->eld_rate)) {
         case 1:  r = 192000; break;
         case 3:  r = 320000; break;
         default: r = 256000; break;      /* 0 (unset/zero-fill) and 2 */
@@ -1227,7 +1227,8 @@ static uint8_t src_eld_vbr_now(void) {
     if (src_eld_vbr_mode == 0) return 0;
     if (bt_sink_relay_streaming()) return 0;   /* coex cap must bind */
     if (aap_get_game()) return 0;              /* deterministic airtime */
-    if (settings()->eld_rate == 1 || settings()->eld_rate == 3) return 0;
+    { uint8_t er = eld_rate_effective(settings()->eld_rate);
+      if (er == 1 || er == 3) return 0; }
     return src_eld_vbr_mode;
 }
 static int src_eld_au_space(void) {
@@ -1242,7 +1243,7 @@ static uint8_t src_eld_slot_count(void) {
     if (aap_get_game())   /* gaming wins over 320k; queue depth per level */
         return (settings()->game_level == 2) ? AUDIO_SLOT_COUNT_ELD_GAME
                                              : AUDIO_SLOT_COUNT_ELD;
-    if (settings()->eld_rate == 3) return AUDIO_SLOT_COUNT_ELD_320;
+    if (eld_rate_effective(settings()->eld_rate) == 3) return AUDIO_SLOT_COUNT_ELD_320;
     return AUDIO_SLOT_COUNT_ELD;
 }
 
