@@ -251,11 +251,21 @@ pico_set_linker_script(${PROJECT_NAME} ${CMAKE_CURRENT_LIST_DIR}/src/memmap_bigs
 # console lives on the non-blocking USB CDC driver (usb_serial.c) instead.
 pico_enable_stdio_uart(${PROJECT_NAME} 0)
 
-# Version from src/version.h (single source of truth) -> picotool info
-file(STRINGS src/version.h _V_NAME REGEX "USBPODS_VERSION_NAME")
-file(STRINGS src/version.h _V_CODE REGEX "USBPODS_VERSION_CODE")
-string(REGEX REPLACE ".*\"(.*)\".*" "\\1" _V_NAME "${_V_NAME}")
-string(REGEX REPLACE ".*CODE +([0-9]+).*" "\\1" _V_CODE "${_V_CODE}")
+# Version -> picotool info + latest.json. src/version.h is the source of
+# truth unless the variant already provided USBPODS_VERSION_NAME/CODE (then
+# the same values are fed to the compiler; version.h's defaults step aside).
+if(DEFINED USBPODS_VERSION_NAME AND DEFINED USBPODS_VERSION_CODE)
+    set(_V_NAME "${USBPODS_VERSION_NAME}")
+    set(_V_CODE "${USBPODS_VERSION_CODE}")
+    target_compile_definitions(${PROJECT_NAME} PRIVATE
+        USBPODS_VERSION_NAME=\"${_V_NAME}\"
+        USBPODS_VERSION_CODE=${_V_CODE})
+else()
+    file(STRINGS src/version.h _V_NAME REGEX "USBPODS_VERSION_NAME")
+    file(STRINGS src/version.h _V_CODE REGEX "USBPODS_VERSION_CODE")
+    string(REGEX REPLACE ".*\"(.*)\".*" "\\1" _V_NAME "${_V_NAME}")
+    string(REGEX REPLACE ".*CODE +([0-9]+).*" "\\1" _V_CODE "${_V_CODE}")
+endif()
 if(USBPODS_LITE)
     set(_V_VARIANT "-lite")
 else()
