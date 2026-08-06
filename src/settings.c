@@ -166,13 +166,20 @@ static void migrate_legacy(void) {
     s_cur.cur_slot = (slot == 2) ? 2 : 1;
     uint8_t us = pg[80];                                 /* legacy settings byte */
     /* Fresh flash: UART console defaults ON — debug-pinless boards
-       (RP2350B-Plus-W) have no SWD, the UART is the only boot console. */
+       (RP2350B-Plus-W) have no SWD, the UART is the only boot console.
+       Build knob: a vendor build can default it OFF (a floating RX pin on a
+       cased product types garbage into the console, and shipped units have no
+       probe attached). The web switch turns it on either way. */
+#ifndef USBPODS_UART_DEFAULT_ON
+#define USBPODS_UART_DEFAULT_ON 1
+#endif
     /* NO USBSET_UAC1 in the default: UAC1-first as fresh default meant every
        settings wipe silently flipped the device to the UAC1 personality —
        "UAC2 broken on Windows" while the UAC2 function sat unused (config 1
        is what hosts bind). UAC2-first is the sane default; legacy hosts opt
        in via the web switch. */
-    s_cur.usbset = (us == 0xFF) ? (USBSET_BOOTCONN | USBSET_PAUSEDC | USBSET_UART)
+    s_cur.usbset = (us == 0xFF) ? (USBSET_BOOTCONN | USBSET_PAUSEDC |
+                                   (USBPODS_UART_DEFAULT_ON ? USBSET_UART : 0))
                                 : (us & 0x0F);          /* rate44 defaults OFF */
     printf("[settings] migrated legacy store (slot %u, usbset 0x%02x)\n",
            s_cur.cur_slot, s_cur.usbset);
