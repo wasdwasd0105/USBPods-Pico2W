@@ -443,6 +443,16 @@ int main() {
 
     tinyusb_main();
     usb_serial_init();   /* printf -> USB CDC too */
+    /* Service USB from HERE, not after the radio probe. tusb_init() only sets
+       the stack up; nothing enumerates until tud_task runs, and usb_serial_task
+       (the non-blocking UART mirror) rides the same timer. The probe sits
+       between the two, so on a board with no CYW43 it hung with USB unserviced
+       AND the console undrained: a Pico 2 (non-W) enumerated nothing at all and
+       the log died at "init slot is 1" with every print after it stuck in the
+       ring. Arming first means USB and the console survive whatever the radio
+       does. */
+    static repeating_timer_t usb_timer;
+    add_repeating_timer_us(-500, usb_timer_callback, NULL, &usb_timer);
     stdio_set_driver_enabled(&stdio_uart, false);   /* blocking early console off:
                                                        the non-blocking mirror owns
                                                        the UART from here (early
@@ -560,6 +570,8 @@ int main() {
             }
         } else {
             printf("radio not found on ANY pin set — Bluetooth DISABLED this boot\n");
+            printf("*** This board has NO wireless. USB audio and the console work,\n");
+            printf("*** but there is no Bluetooth — USBPods needs a Pico 2 W.\n");
             radio_absent = true;
         }
     }
@@ -584,9 +596,6 @@ int main() {
     // NOTE: FDK-AAC hangs on Core 1 (likely internal global state / malloc contention)
     // Keep encoding on Core 0 for now
     // multicore_launch_core1_with_stack(core1_aaceld_encoder_loop, core1_stack, sizeof(core1_stack));
-
-    static repeating_timer_t usb_timer;
-    add_repeating_timer_us(-500, usb_timer_callback, NULL, &usb_timer);
 
     static repeating_timer_t bootsel_timer;
     /* Button poll is safe on EVERY board now — get_bootsel_button re-enters
@@ -617,9 +626,27 @@ int main() {
            ("crash after bt sink started playing", both boards). 6 packets
            (~140 ms of audio) per 50 ms pass still catches up fast; overflow
            beyond the 8-slot ring degrades to counted drops, not a reboot. */
-        for (int rn = 0; rn < 6 && bt_sink_relay_work(); rn++) { }
-        watchdog_hw->scratch[6] = 4;
-        a2dp_source_main_work();   /* deferred ELD encoder rebuild (TX stall) */
+        /* Both of these reach into BTstack/codec state that only exists once
+           the radio came up. On a board with no CYW43 (a plain Pico 2) that
+           state was never initialised, and the loop died here — phase 3, all
+           IRQs dead, so USB never enumerated and the console mirror stopped
+           mid-boot. Skip them and the board runs as a USB device that simply
+           has no Bluetooth, which is what the UI now says. */
+        if (!radio_absent) {
+            for (int rn = 0; rn < 6 && bt_sink_relay_work(); rn++) { }
+            watchdog_hw->scratch[6] = 4;
+            a2dp_source_main_work();   /* deferred ELD encoder rebuild (TX stall) */
+        } else {
+            /* console_init() — and with it the key handler — is registered
+               inside btstack_main(), which never runs on a radio-less board.
+               btstack_stdin_setup() needs the run loop, so poll stdin here
+               instead: without this the console is mute on exactly the board
+               whose problem you are trying to diagnose. */
+            extern void console_key(char cmd);
+            int ch;
+            while ((ch = getchar_timeout_us(0)) != PICO_ERROR_TIMEOUT)
+                console_key((char) ch);
+        }
         watchdog_hw->scratch[6] = 5;
         /* Auto reconnect when powered on (USB settings bit): one dial attempt
            a few seconds after boot, once BTstack has settled. */
