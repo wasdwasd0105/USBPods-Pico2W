@@ -365,7 +365,8 @@ void console_key(char cmd){
         }
         case 'e': { /* LHDC bitrate — cycles 400 -> 500 -> 256, persisted */
             uint8_t cur = settings()->lhdc_rate;
-            settings()->lhdc_rate = (cur == 3) ? 1 : (cur == 1) ? 2 : 3;
+            /* 400 -> 500 -> 900 -> 256 -> 400 */
+            settings()->lhdc_rate = (cur == 3) ? 4 : (cur == 4) ? 1 : (cur == 1) ? 2 : 3;
             settings_mark_dirty();
             codec_lhdc_request_rate(settings()->lhdc_rate);   /* live, no replug */
             printf("LHDC bitrate: %d kbps\n", codec_lhdc_setting_kbps());

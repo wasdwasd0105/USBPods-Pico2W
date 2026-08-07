@@ -49,6 +49,10 @@ static uint8_t lhdc_bitrate_index(void){
     switch (settings()->lhdc_rate){
         case 1:  return 3;    /* 256 kbps */
         case 3:  return 6;    /* 500 kbps */
+        case 4:  return 7;    /* 900 kbps — ONE 562 B frame per packet, so it
+                                 fits the payload budget where 500 packs two
+                                 frames razor-thin; but it doubles the packet
+                                 rate to 200/s and needs a strong link. */
         default: return 5;    /* 400 kbps (0/2 = zero-fill default) */
     }
 }
@@ -56,6 +60,7 @@ int codec_lhdc_setting_kbps(void){
     switch (settings()->lhdc_rate){
         case 1:  return 256;
         case 3:  return 500;
+        case 4:  return 900;
         default: return 400;
     }
 }
