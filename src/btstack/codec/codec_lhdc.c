@@ -83,7 +83,7 @@ static uint8_t lhdc_seq;              /* packet sequence for the media header */
 static volatile uint8_t lhdc_pending_rate;   /* 0 = nothing requested */
 
 void codec_lhdc_request_rate(uint8_t r){
-    if (r >= 1 && r <= 3) lhdc_pending_rate = r;
+    if (r >= 1 && r <= 4) lhdc_pending_rate = r;   /* 4 = 900 kbps */
 }
 
 void codec_lhdc_tick(void){
