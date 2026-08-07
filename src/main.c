@@ -321,6 +321,10 @@ void __attribute__((naked)) __not_in_flash_func(isr_hardfault)(void) {
 }
 
 static bool radio_absent;   /* universal build: no radio found — BT disabled */
+/* Plugged into a plain Pico 2 (no CYW43): USB audio enumerates and the console
+   works, but there is no Bluetooth at all. Surfaced so the web UI can say so
+   instead of showing a dongle that simply never connects to anything. */
+bool radio_is_absent(void) { return radio_absent; }
 
 int main() {
 

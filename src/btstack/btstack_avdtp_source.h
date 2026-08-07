@@ -77,6 +77,7 @@ uint16_t a2dp_source_con_handle(void); /* headset ACL handle, 0 = none */
 void a2dp_source_note_send(uint8_t rc);      /* count/report a failed media send */
 const uint8_t *a2dp_source_peer_addr(void);  /* who is ACTUALLY connected (not the
                                                 dial target from the slot) */
+bool radio_is_absent(void);   /* no CYW43 on this board — no Bluetooth */
 uint32_t a2dp_source_live_kbps(void);  /* on-air rate of the current codec, 0 = unknown */
 void bt_link_tx_power(uint16_t con_handle, int8_t dbm); /* CYW43 vendor cap */
 
