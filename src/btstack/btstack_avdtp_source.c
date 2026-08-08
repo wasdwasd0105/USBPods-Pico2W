@@ -1183,6 +1183,15 @@ static uint32_t src_eld_bitrate(void) {
         case 3:  r = 320000; break;
         default: r = 256000; break;      /* 0 (unset/zero-fill) and 2 */
     }
+    /* 44.1 pipeline: hold ELD at gaming's exact stream (192k CBR, sbr/vbr
+       already forced off by the vbr_now guard). 256k CBR here transmitted
+       fine but rendered SILENT on the buds (HW 2026-08-09: 44 pkt/s, AUs
+       staged, AAP live, no audio), and 256k VBR+SBR wedges the FDK rate
+       loop. 192k CBR is the one 44.1 config with weeks of field proof —
+       gaming has shipped it since day one. Full 256k VBR+SBR engages on
+       the 48 k host path, where it is Apple parity and proven. */
+    if (!aap_get_game() && (settings()->usbset & USBSET_RATE44) && r > 192000)
+        r = 192000;
     /* dual-stream coex: while a relay phone streams (AAC-LC in + ELD out
        share the radio), cap ELD at 164 kbps — applied via the suspend->
        rebuild->restart dance in the ladder, never a live SetParam. */
@@ -1233,11 +1242,16 @@ static uint8_t src_eld_sbr = 1;
 static uint8_t src_eld_vbr_now(void) {
     extern bool aap_get_game(void);
     if (src_eld_vbr_mode == 0) return 0;
-    /* (2026-08-09: an attempt to force plain CBR on the 44.1 pipeline lived
-       here briefly — reverted the same night. AirPods ELD is an LD-SBR
-       stream: the vendor config blob carries no SBR flag, the decoder just
-       expects SBR-bearing frames, and plain-ELD frames decode as noise, then
-       silence. SBR is wire format here, not a knob.) */
+    /* 44.1 pipeline: plain CBR, no VBR and (via sbr_now's coupling) no SBR.
+       VBR5+SBR over the 441->480 resampler wedges FDK's rate loop — caught
+       at FDKaacEnc_dynBitCount over SWD on a build with STOCK FDK, and the
+       non-game bootloop reproduced within minutes every time this guard was
+       absent. The buds decode SBR-less ELD fine — gaming (192k CBR sbr=0)
+       has shipped that way for weeks. (This guard was here once before and
+       got reverted on a mistaken noise attribution: the noise came from
+       since-removed FDK iteration caps that shipped in the same build, not
+       from sbr=0. Full story: private/docs + the 2026-08-09 commits.) */
+    if (settings()->usbset & USBSET_RATE44) return 0;
     if (bt_sink_relay_streaming()) return 0;   /* coex cap must bind */
     if (aap_get_game()) return 0;              /* deterministic airtime */
     if (settings()->eld_rate == 1 || settings()->eld_rate == 3) return 0;
@@ -1325,9 +1339,24 @@ int codec_fdk_fill(a2dp_media_sending_context_t *context) {
         else if (cur_codec == 4) max_aus = 2;
     }
 
+    /* Hard time budget on top of the AU cap: the AU cap bounds WORK, not
+       TIME. ELD+SBR+VBR on the 44.1 resample pipeline can push one granule's
+       encode past the pump interval; every pass then ends already-due, the
+       run loop re-fires the timer back-to-back and thread mode starves to
+       the watchdog (confirmed twice on HW: 2026-08-09, and again the same
+       night the moment this guard was removed — non-game mode bootlooped
+       within minutes). The first iteration always runs (elapsed ~0), so
+       ≥1 AU per tick ≥ realtime; overrun just leaves slots for the next
+       tick and chronic overrun degrades to producer-side drops, not reboot.
+       This was briefly suspected in the noise-then-silence regression and
+       removed with the FDK-internal edits; hardware exonerated it — the
+       audio was clean with the budget absent only until the first
+       heavy-mode session wedged the box. */
+    uint32_t fill_t0 = time_us_32();
     while (context->samples_ready >= num_audio_samples_per_aac_buffer &&
            (context->max_media_payload_size - context->codec_storage_count) > min_space &&
-           max_aus-- > 0) {
+           max_aus-- > 0 &&
+           (uint32_t)(time_us_32() - fill_t0) < 6000) {
 
         uint8_t slot_idx;
         if (!audio_slot_pop(&slot_idx)) break;
