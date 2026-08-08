@@ -1,4 +1,4 @@
-# USBPods Lite — Pico 2 W USB to Bluetooth Audio
+# USBPods — Pico 2 W USB to Bluetooth Audio
 
 <p align="center">
 <img alt="Logo" src="logo.jpg" width="200">
