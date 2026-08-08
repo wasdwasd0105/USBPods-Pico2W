@@ -1339,24 +1339,19 @@ int codec_fdk_fill(a2dp_media_sending_context_t *context) {
         else if (cur_codec == 4) max_aus = 2;
     }
 
-    /* Hard time budget on top of the AU cap: the AU cap bounds WORK, not
-       TIME. ELD+SBR+VBR on the 44.1 resample pipeline can push one granule's
-       encode past the pump interval; every pass then ends already-due, the
-       run loop re-fires the timer back-to-back and thread mode starves to
-       the watchdog (confirmed twice on HW: 2026-08-09, and again the same
-       night the moment this guard was removed — non-game mode bootlooped
-       within minutes). The first iteration always runs (elapsed ~0), so
-       ≥1 AU per tick ≥ realtime; overrun just leaves slots for the next
-       tick and chronic overrun degrades to producer-side drops, not reboot.
-       This was briefly suspected in the noise-then-silence regression and
-       removed with the FDK-internal edits; hardware exonerated it — the
-       audio was clean with the budget absent only until the first
-       heavy-mode session wedged the box. */
-    uint32_t fill_t0 = time_us_32();
+    /* NO time budget here, deliberately (it came and went twice on
+       2026-08-09). A 6 ms elapsed-time bound on this loop was added to stop
+       the VBR+SBR-at-44.1 overload wedge, but that config is now impossible
+       (src_eld_vbr_now forces CBR on the 44.1 pipeline, and 48 k VBR+SBR ran
+       for weeks without a budget). Every build carrying the budget produced
+       noise-then-silence in non-game ELD while every budget-free build with
+       the same encoder config played clean — mechanism never identified by
+       inspection (the early exit looks equivalent to the 3-frame break
+       below), but the hardware correlation was 100%. If an encode-overload
+       config ever returns, bound the CONFIG, not this loop. */
     while (context->samples_ready >= num_audio_samples_per_aac_buffer &&
            (context->max_media_payload_size - context->codec_storage_count) > min_space &&
-           max_aus-- > 0 &&
-           (uint32_t)(time_us_32() - fill_t0) < 6000) {
+           max_aus-- > 0) {
 
         uint8_t slot_idx;
         if (!audio_slot_pop(&slot_idx)) break;
