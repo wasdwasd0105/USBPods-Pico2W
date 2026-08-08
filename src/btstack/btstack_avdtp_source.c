@@ -1142,6 +1142,14 @@ bool get_allow_switch_slot(){
 #ifdef HAVE_AAC_FDK
 
 static volatile bool src_eld_reset_pending;  /* TX-stall ELD reset: run in main loop */
+/* Codec teardown also runs in the main loop, and for a harder reason than the
+   ELD reset: every release() frees, and pico's free() takes malloc_mutex via
+   mutex_enter_blocking (pico_multicore is linked, so PICO_USE_MALLOC_MUTEX
+   defaults on). Called from the BT background IRQ it can preempt a thread-mode
+   malloc that already holds that mutex — and thread mode can never run to
+   release it, because any IRQ outranks it. That deadlock presents as the loop
+   starving with IRQs still alive. */
+static volatile bool src_codec_release_pending;
 static uint32_t src_avrcp_op_ms;             /* last accepted transport press
                                                 (storm guard, see AVRCP target) */
 static volatile uint32_t src_storm_ms;       /* last signal-bad recovery    */
@@ -1225,6 +1233,11 @@ static uint8_t src_eld_sbr = 1;
 static uint8_t src_eld_vbr_now(void) {
     extern bool aap_get_game(void);
     if (src_eld_vbr_mode == 0) return 0;
+    /* (2026-08-09: an attempt to force plain CBR on the 44.1 pipeline lived
+       here briefly — reverted the same night. AirPods ELD is an LD-SBR
+       stream: the vendor config blob carries no SBR flag, the decoder just
+       expects SBR-bearing frames, and plain-ELD frames decode as noise, then
+       silence. SBR is wire format here, not a knob.) */
     if (bt_sink_relay_streaming()) return 0;   /* coex cap must bind */
     if (aap_get_game()) return 0;              /* deterministic airtime */
     if (settings()->eld_rate == 1 || settings()->eld_rate == 3) return 0;
@@ -1260,6 +1273,7 @@ int codec_fdk_fill(a2dp_media_sending_context_t *context) {
     int          total_samples_read               = 0;
 
     if (src_eld_reset_pending) return 0;   /* encoder rebuild in flight (main loop) */
+    if (handleAAC == NULL) return 0;       /* released; same guard as lhdc_fill */
 
     unsigned int num_audio_samples_per_aac_buffer = acc_num_simples;
 
@@ -1672,6 +1686,44 @@ void a2dp_source_apply_eld_rate(void) {
 }
 
 void a2dp_source_main_work(void) {
+    if (src_codec_release_pending) {
+        src_codec_release_pending = false;
+        /* Walk THE registry rather than naming codecs. The old list was
+           hand-written (FDK + LDAC); LHDC was added to the registry afterwards
+           and never added here, so an LHDC session leaked its encoder and the
+           next AAC-ELD open failed with error 33 — the same shape as the Bose
+           bug, one codec later. Every codec's release is NULL-safe and
+           idempotent (AAC and ELD deliberately share codec_fdk_release).
+
+           TWO guards, both load-bearing (HW 2026-08-09, three SWD autopsies):
+
+           cur_codec == 0: a release event is not always the END of activity —
+           an AirPods connect BEGINS with one (stale-session cleanup, then
+           accept). Deferring the sweep let it fire after the accept had
+           already opened the new encoder, freeing handleAAC out from under a
+           live pump: use-after-free, then a wedge inside whatever FDK stage
+           read the recycled memory first (rate loop, section writer and the
+           MDCT, on successive crashes). If a session opened since the event,
+           there is nothing stale to free — its configure path replaced any
+           same-family handle. The rare loss of this race merely re-creates
+           the old leak for one session (error 33, recoverable), never a free
+           of live state.
+
+           IRQ-off: the check and the sweep must be one atomic step against
+           the BT IRQ, or a configure could open a handle mid-sweep and have
+           it freed a microsecond later. Freeing with IRQs off in thread mode
+           is the house pattern (the ELD rebuild below) and also sidesteps the
+           malloc_mutex deadlock that killed the IRQ-context sweep. */
+        uint32_t irq = save_and_disable_interrupts();
+        if (cur_codec == 0) {
+            for (int i = 0; codec_registry[i]; i++)
+                if (codec_registry[i]->release) codec_registry[i]->release();
+            restore_interrupts(irq);
+            printf("Codecs released (main loop)\n");
+        } else {
+            restore_interrupts(irq);
+        }
+    }
     if (!src_eld_reset_pending) return;
     uint32_t irq = save_and_disable_interrupts();
     if (handleAAC != NULL) {
@@ -3249,8 +3301,11 @@ static void packet_handler_inner(uint8_t packet_type, uint16_t channel, uint8_t 
                open — the error-33 Bose bug). Reconnect re-opens per config. */
             cur_codec = 0;   /* encoders are GONE: no pump dispatch may run
                                 one until the next codec setup completes */
-            codec_fdk_release();
-            codec_ldac_ops.release();
+            /* Hand off to the main loop: release() frees, and freeing from
+               this IRQ can deadlock on malloc_mutex (see the flag's comment).
+               cur_codec is already 0, so nothing dispatches an encoder in the
+               few ms before the sweep runs. */
+            src_codec_release_pending = true;
             printf("Signaling connection released.\n");
             break;
         default:
