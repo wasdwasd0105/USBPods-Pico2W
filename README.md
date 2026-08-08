@@ -1,5 +1,9 @@
 # USBPods Lite — Pico 2 W USB to Bluetooth Audio
 
+<p align="center">
+<img alt="Logo" src="logo.jpg" width="200">
+</p>
+
 Open-source firmware that turns a **Raspberry Pi Pico 2 W** (or the Waveshare
 **RP2350B-Plus-W** USB dongle — one universal binary covers both) into a
 driver-free USB sound card that streams to Bluetooth headphones with the
@@ -14,9 +18,6 @@ lived in this repo ([video demo](http://www.youtube.com/watch?v=Dilagi7l4xc)
 of the original Pico W version). The RP2040 Pico W is **not** supported by
 this firmware — see the older tags for that board.
 
-<p align="center">
-<img alt="Logo" src="logo.png" width="200">
-</p>
 
 ## Features
 
@@ -135,16 +136,15 @@ Requirements:
 - **Rust** for the LHDC V5 encoder crate, with the soft-float Cortex-M33
   target:
 
-  ```
   rustup target add thumbv8m.main-none-eabi
-  ```
+```raw
 
 Then:
 
 ```
 cmake -B build -G Ninja
 ninja -C build
-```
+```raw
 
 The result is `build/USBPods_Pico2W_Lite.uf2`.
 
@@ -221,7 +221,7 @@ Bundled third-party code keeps its own licenses:
   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
   See the License for the specific language governing permissions and
   limitations under the License.
-```
+```raw
 
 NOTICE
 ```
@@ -232,7 +232,7 @@ NOTICE
    For the detail of certification process, see the following URL:
       https://www.sony.net/Products/LDAC/aosp/
 
-```
+```raw
 
 ### ldacBT: https://github.com/EHfive/ldacBT
 ```
@@ -249,7 +249,9 @@ NOTICE
   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
   See the License for the specific language governing permissions and
   limitations under the License.
-```
+```raw
 
 ### FDK AAC: https://github.com/mstorsjo/fdk-aac
 See `3rd-party/fdk-aac/NOTICE` for the Fraunhofer FDK AAC license.
+
+```
