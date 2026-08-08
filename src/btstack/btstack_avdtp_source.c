@@ -4205,7 +4205,12 @@ int btstack_main(int argc, const char * argv[]){
 #ifdef AVRCP_BROWSING_ENABLED
     supported_features |= AVRCP_FEATURE_MASK_BROWSING;
 #endif
-    avrcp_target_create_sdp_record(sdp_avrcp_target_service_buffer, 0x10002, supported_features, NULL, NULL);
+    /* 0x10001: was 0x10002, colliding with the A2DP source record above —
+       sdp_register_service returned SDP_HANDLE_ALREADY_REGISTERED (unchecked)
+       and the TARGET record was never actually published. Volume worked
+       anyway because AVRCP rides the already-open channel; only peers doing
+       an SDP lookup for our TG capability ever saw the gap. */
+    avrcp_target_create_sdp_record(sdp_avrcp_target_service_buffer, 0x10001, supported_features, NULL, NULL);
     sdp_register_service(sdp_avrcp_target_service_buffer);
 
     // Create AVRCP Controller service record and register it with SDP. We send Category 2 commands to the headphone, e.g. volume up/down
