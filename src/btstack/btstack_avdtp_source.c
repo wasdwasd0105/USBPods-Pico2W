@@ -3721,6 +3721,11 @@ void avdtp_disconnect_keep_pairing(){
     a2dp_demo_timer_stop(&media_tracker);
     a2dp_source_disconnect(media_tracker.avdtp_cid);
     avrcp_disconnect(media_tracker.avdtp_cid);
+    aap_disconnect();   /* AAP rides its own L2CAP channel — the AVDTP release
+                           does not take it down, and a lingering channel holds
+                           the ACL so the old AirPods redial mid-next-session
+                           and the UI keeps their menu (report 7 sees channel
+                           open + the new headset's connected flag) */
     audio_slot_queue_init();
     led_idle_unless_pairing();
 }
@@ -3748,6 +3753,7 @@ void avdtp_disconnect_and_scan(){
     a2dp_demo_timer_stop(&media_tracker);
     a2dp_source_disconnect(media_tracker.avdtp_cid);
     avrcp_disconnect(media_tracker.avdtp_cid);
+    aap_disconnect();   /* see avdtp_disconnect_keep_pairing */
     audio_slot_queue_init(); // reset all slots on disconnect
     gap_drop_link_key_for_bd_addr((uint8_t *) get_device_addr());
     uint8_t currect_slot = read_uint8_last_flash();
