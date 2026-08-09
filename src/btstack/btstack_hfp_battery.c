@@ -43,6 +43,7 @@ static bool    s_vra_active;
 static bd_addr_t s_peer;
 static btstack_timer_source_t s_dial_timer;
 static uint8_t s_dial_defers;
+static uint8_t s_redials;          /* bounded SLC re-dials after a mid-link drop */
 static uint32_t s_stream_started_ms;
 
 /* canonical AG indicator table (hfp_ag_demo.c) — AT+CIND needs it to
@@ -97,8 +98,23 @@ static void hfp_battery_handler_inner(uint8_t packet_type, uint8_t *packet, uint
         }
         case HFP_SUBEVENT_SERVICE_LEVEL_CONNECTION_RELEASED:
             s_slc_up = false; s_vra_active = false;
-            s_biev_pct = s_apple_pct = -1;
+            /* Battery values survive a mid-link SLC drop deliberately: the
+               headset ITSELF dials HFP (it thinks we are a phone), sometimes
+               racing our timer — the race's loser gets torn down and this
+               event fires while the A2DP link is fine. Wiping here lost a
+               freshly-reported value (HW: Bose, power-on auto-connect).
+               The true end of the link wipes in hfp_battery_link_down().
+               And because a lost race is transient, re-dial — bounded, so a
+               headset that genuinely keeps hanging up gets 3 attempts total,
+               never a storm. */
             printf("[hfp] SLC released\n");
+            if (s_redials < 2){
+                s_redials++;
+                s_dialed = false;
+                btstack_run_loop_remove_timer(&s_dial_timer);
+                btstack_run_loop_set_timer(&s_dial_timer, DIAL_DEFER_MS);
+                btstack_run_loop_add_timer(&s_dial_timer);
+            }
             break;
 
         case HFP_SUBEVENT_HF_INDICATOR:     /* PRIMARY: AT+BIEV=2,<0-100> */
@@ -192,6 +208,7 @@ static void dial_timer_handler(btstack_timer_source_t *ts){
 void hfp_battery_arm_dial(bd_addr_t addr){
     memcpy(s_peer, addr, sizeof(bd_addr_t));
     s_dial_defers = 0;
+    s_redials = 0;
     /* most headsets dial RFCOMM to us within ~1 s of seeing the AG record;
        incoming auto-creates the AG connection and this timer then no-ops */
     btstack_run_loop_remove_timer(&s_dial_timer);
@@ -202,6 +219,7 @@ void hfp_battery_arm_dial(bd_addr_t addr){
 void hfp_battery_link_down(void){
     btstack_run_loop_remove_timer(&s_dial_timer);
     s_slc_up = false; s_dialed = false; s_vra_active = false;
+    s_redials = 0;
     s_biev_pct = s_apple_pct = -1;
     s_stream_started_ms = 0;
 }
