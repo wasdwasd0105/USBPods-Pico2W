@@ -148,6 +148,7 @@ add_executable(${PROJECT_NAME}
     src/btstack/codec/codec_aaceld.c
     src/btstack/codec/codec_registry.c
     src/btstack/btstack_hci.c
+    src/btstack/btstack_hfp_battery.c
     src/tinyusb/uac.c
     src/tinyusb/uac1_device.c
     src/tinyusb/usb_serial.c

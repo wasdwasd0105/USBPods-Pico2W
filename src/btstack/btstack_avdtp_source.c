@@ -50,6 +50,7 @@
 #include "btstack_avdtp_source.h"
 #include "../tinyusb/uac.h"
 #include "btstack_aap.h"
+#include "btstack_hfp_battery.h"
 #include "pico/multicore.h"
 #include "pico/util/queue.h"
 #include "hardware/sync.h"      /* IRQ-off windows for main-loop FDK mallocs */
@@ -2764,6 +2765,7 @@ static void packet_handler_inner(uint8_t packet_type, uint16_t channel, uint8_t 
             /* HW-tested best value: full +8 dBm cap on every link ('T'/'W'
                console keys remain for experiments) */
             bt_link_tx_power(src_con_handle, 8);
+            hfp_battery_arm_dial(address);   /* battery SLC, deferred 2 s */
             {   /* nameless slot (v1-era record): learn the name now */
                 char snm[SLOT_NAME_LEN];
                 read_slot_name(read_uint8_last_flash(), snm);
@@ -2786,6 +2788,7 @@ static void packet_handler_inner(uint8_t packet_type, uint16_t channel, uint8_t 
             media_tracker.local_seid = avdtp_subevent_streaming_connection_established_get_local_seid(packet);
             media_tracker.remote_seid = avdtp_subevent_streaming_connection_established_get_remote_seid(packet);
             a2dp_is_connected_flag = true;
+            hfp_battery_note_stream_started();
             /* macOS-parity PB regime (local SDK l2cap patch — which DOES
                exist in this tree, see sdk-patches/): ONLY the registered
                media channel goes out PB=0b10 auto-flushable; signaling and
@@ -3330,6 +3333,7 @@ static void packet_handler_inner(uint8_t packet_type, uint16_t channel, uint8_t 
                cur_codec is already 0, so nothing dispatches an encoder in the
                few ms before the sweep runs. */
             src_codec_release_pending = true;
+            hfp_battery_link_down();
             printf("Signaling connection released.\n");
             break;
         default:
@@ -4194,6 +4198,7 @@ static void avrcp_controller_packet_handler_inner(uint8_t packet_type, uint16_t 
 int btstack_main(int argc, const char * argv[]){
 
     l2cap_init();
+    hfp_battery_init();   /* AG for headset battery % — SLC only, no SCO */
     bt_hci_init();
 
     // Initialize AVDTP Sink
@@ -4242,6 +4247,8 @@ int btstack_main(int argc, const char * argv[]){
     uint16_t controller_supported_features = AVRCP_FEATURE_MASK_CATEGORY_MONITOR_OR_AMPLIFIER;
     avrcp_controller_create_sdp_record(sdp_avrcp_controller_service_buffer, 0x10003, controller_supported_features, NULL, NULL);
     sdp_register_service(sdp_avrcp_controller_service_buffer);
+
+    hfp_battery_register_sdp();   /* 0x10005 — record count now 5 of 6 */
 
 
     console_init();   /* key handler + persisted debug mode (console.c) */

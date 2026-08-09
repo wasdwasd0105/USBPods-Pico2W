@@ -32,7 +32,9 @@
 #define MAX_NR_HFP_CONNECTIONS 1
 /* headset: AVDTP sig+media, AVCTP, AAP = 4; phone: AVDTP sig+media, AVCTP = 3;
    +1 transient SDP-client channel during outgoing connects. */
-#define MAX_NR_L2CAP_CHANNELS  8
+#define MAX_NR_L2CAP_CHANNELS  9   /* +1: the HFP-AG RFCOMM multiplexer holds a
+                                      persistent L2CAP channel; 8 left no room for
+                                      the SDP-query transient in the dual-stream case */
 #define MAX_NR_L2CAP_SERVICES  3
 #define MAX_NR_RFCOMM_CHANNELS 1
 #define MAX_NR_RFCOMM_MULTIPLEXERS 1

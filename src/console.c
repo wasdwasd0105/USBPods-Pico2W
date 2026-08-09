@@ -141,6 +141,10 @@ void console_show_menu(void){
                     uint32_t kb = a2dp_source_live_kbps();   /* on-air rate */
                     if (kb) printf("  %lu kbps", (unsigned long) kb);
                 }
+                {   extern int8_t hfp_battery_get_percent(void);
+                    int8_t hb = hfp_battery_get_percent();
+                    if (hb >= 0) printf("   batt %d%%", hb);   /* HFP headset battery */
+                }
                 if (b[0] != 0xFF) printf("   L %u%%%s",   b[0] & 0x7F, (b[0] & 0x80) ? "+" : "");
                 if (b[1] != 0xFF) printf("   R %u%%%s",   b[1] & 0x7F, (b[1] & 0x80) ? "+" : "");
                 if (b[2] != 0xFF) printf("   case %u%%%s", b[2] & 0x7F, (b[2] & 0x80) ? "+" : "");
