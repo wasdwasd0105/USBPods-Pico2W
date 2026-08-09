@@ -130,16 +130,20 @@ static volatile bool s_pairwin_open;
 static void pairwin_timeout(btstack_timer_source_t *ts) {
     (void)ts;
     if (s_pairwin_open) {
+        extern void hfp_battery_sdp_hide(bool hide);
         s_pairwin_open = false;
         gap_discoverable_control(0);
+        hfp_battery_sdp_hide(false);
         printf("Phone pairing window CLOSED (timeout)\n");
     }
 }
 
 void bt_phone_pair_window(bool open) {
+    extern void hfp_battery_sdp_hide(bool hide);
     btstack_run_loop_remove_timer(&s_pairwin_timer);
     if (open && !s_pairwin_open) {
         s_pairwin_open = true;
+        hfp_battery_sdp_hide(true);
         gap_discoverable_control(1);
         btstack_run_loop_set_timer_handler(&s_pairwin_timer, pairwin_timeout);
         btstack_run_loop_set_timer(&s_pairwin_timer, PHONE_PAIR_WINDOW_MS);
@@ -148,6 +152,7 @@ void bt_phone_pair_window(bool open) {
     } else if (!open && s_pairwin_open) {
         s_pairwin_open = false;
         gap_discoverable_control(0);
+        hfp_battery_sdp_hide(false);
         printf("Phone pairing window CLOSED\n");
     }
 }

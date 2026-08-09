@@ -14,6 +14,7 @@
 
 void   hfp_battery_init(void);          /* btstack_main, after l2cap_init      */
 void   hfp_battery_register_sdp(void);  /* btstack_main, with the other records */
+void   hfp_battery_sdp_hide(bool hide); /* phone-pairing window: hide the AG record */
 void   hfp_battery_arm_dial(bd_addr_t addr); /* AVDTP signaling established    */
 void   hfp_battery_link_down(void);     /* AVDTP signaling released            */
 void   hfp_battery_note_stream_started(void); /* defers the dial while fresh   */

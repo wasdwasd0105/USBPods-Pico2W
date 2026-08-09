@@ -66,6 +66,7 @@ static const hfp_generic_status_indicator_t s_hf_indicators[] = { {1, 1}, {2, 1}
 static const uint8_t s_codecs[] = { HFP_CODEC_CVSD };
 
 static uint8_t s_sdp_buf[150];
+static bool s_sdp_registered;
 
 int8_t hfp_battery_get_percent(void){
     return s_biev_pct >= 0 ? s_biev_pct : s_apple_pct;
@@ -252,4 +253,24 @@ void hfp_battery_register_sdp(void){
         0 /* no call reject */, 0 /* SDP SupportedFeatures: none */,
         sizeof(s_codecs), s_codecs);
     sdp_register_service(s_sdp_buf);
+    s_sdp_registered = true;
+}
+
+/* Hide the AG record while the phone-pairing window is open. A pairing phone
+   browses our SDP at its most suspicious moment, and an Audio Gateway record
+   on a headphones-class device reads as "this is another phone" — observed
+   as the phone dropping the ACL (reason 0x13) mid-pairing and reporting
+   "pairing unsuccessful" the moment this record first shipped. Headsets are
+   unaffected: they browse on connect, not during our phone window, and the
+   outgoing SLC dial never needs our own record. */
+void hfp_battery_sdp_hide(bool hide){
+    if (hide && s_sdp_registered){
+        sdp_unregister_service(HFP_BATTERY_SDP_HANDLE);
+        s_sdp_registered = false;
+        printf("[hfp] AG record hidden (phone pairing)\n");
+    } else if (!hide && !s_sdp_registered){
+        sdp_register_service(s_sdp_buf);   /* record bytes still staged */
+        s_sdp_registered = true;
+        printf("[hfp] AG record restored\n");
+    }
 }
