@@ -35,7 +35,14 @@
 #define MAX_NR_L2CAP_CHANNELS  9   /* +1: the HFP-AG RFCOMM multiplexer holds a
                                       persistent L2CAP channel; 8 left no room for
                                       the SDP-query transient in the dual-stream case */
-#define MAX_NR_L2CAP_SERVICES  3
+#define MAX_NR_L2CAP_SERVICES  4   /* RFCOMM (HFP-AG) + AVDTP + AVCTP + SDP.
+                                      3 was exactly full BEFORE the HFP work; adding
+                                      rfcomm_init first in btstack_main silently evicted
+                                      SDP -- l2cap_register_service fails quietly, and a
+                                      pairing phone then can't browse PSM 1: ACL connects,
+                                      no SSP ever starts, phone drops with 0x13,
+                                      "pairing unsuccessful" (HW 2026-08-10, both iOS and
+                                      Android). Count services when adding protocols. */
 #define MAX_NR_RFCOMM_CHANNELS 1
 #define MAX_NR_RFCOMM_MULTIPLEXERS 1
 #define MAX_NR_RFCOMM_SERVICES 1

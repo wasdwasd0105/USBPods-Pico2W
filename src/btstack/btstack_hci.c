@@ -287,6 +287,51 @@ static void hci_packet_handler_inner(uint8_t packet_type, uint16_t channel, uint
             hci_event_pin_code_request_get_bd_addr(packet, address);
             gap_pin_code_response(address, "0000");
             break;
+        /* ---- BENCH DIAGNOSTIC (pairing-unsuccessful hunt, 2026-08-10):
+           one line per SSP/auth stage so a single failed pairing attempt
+           names the stage that dies. Cheap enough to keep. ---- */
+        case HCI_EVENT_CONNECTION_COMPLETE: {
+            uint8_t st = hci_event_connection_complete_get_status(packet);
+            hci_event_connection_complete_get_bd_addr(packet, address);
+            printf("[pair] ACL complete %s status 0x%02x handle 0x%04x\n",
+                   bd_addr_to_str(address), st,
+                   hci_event_connection_complete_get_connection_handle(packet));
+            break;
+        }
+        case HCI_EVENT_IO_CAPABILITY_REQUEST:
+            hci_event_io_capability_request_get_bd_addr(packet, address);
+            printf("[pair] IO capability REQUEST from %s (stack auto-replies)\n", bd_addr_to_str(address));
+            break;
+        case HCI_EVENT_IO_CAPABILITY_RESPONSE:
+            hci_event_io_capability_response_get_bd_addr(packet, address);
+            printf("[pair] IO capability RESPONSE: io %u auth_req %u\n",
+                   hci_event_io_capability_response_get_io_capability(packet),
+                   hci_event_io_capability_response_get_authentication_requirements(packet));
+            break;
+        case HCI_EVENT_USER_CONFIRMATION_REQUEST:
+            printf("[pair] user confirmation request (numeric %06lu) — stack auto-accept\n",
+                   (unsigned long)hci_event_user_confirmation_request_get_numeric_value(packet));
+            break;
+        case HCI_EVENT_SIMPLE_PAIRING_COMPLETE:
+            hci_event_simple_pairing_complete_get_bd_addr(packet, address);
+            printf("[pair] simple pairing COMPLETE %s status 0x%02x\n",
+                   bd_addr_to_str(address), hci_event_simple_pairing_complete_get_status(packet));
+            break;
+        case HCI_EVENT_LINK_KEY_REQUEST:
+            printf("[pair] link key request (stack answers from store)\n");
+            break;
+        case HCI_EVENT_LINK_KEY_NOTIFICATION:
+            printf("[pair] link key NOTIFICATION (new key stored)\n");
+            break;
+        case HCI_EVENT_AUTHENTICATION_COMPLETE:
+            printf("[pair] authentication complete status 0x%02x\n",
+                   hci_event_authentication_complete_get_status(packet));
+            break;
+        case HCI_EVENT_ENCRYPTION_CHANGE:
+            printf("[pair] encryption change status 0x%02x enabled %u\n",
+                   hci_event_encryption_change_get_status(packet),
+                   hci_event_encryption_change_get_encryption_enabled(packet));
+            break;
         case HCI_EVENT_REMOTE_NAME_REQUEST_COMPLETE: {
             /* Requested at relay-phone adoption: update the phone-list entry
                with the friendly name (dedupe keeps MRU position sane). */
