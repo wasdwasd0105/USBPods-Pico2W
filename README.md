@@ -9,10 +9,9 @@
 **Visit USBPods webUI to control your Dongle! [hub.usbpods.com](https://hub.usbpods.com)**
 
 
-Open-source firmware that turns a **Raspberry Pi Pico 2 W** (or the Waveshare
-**RP2350B-Plus-W** USB dongle — one universal binary covers both) into a
-driver-free USB sound card that streams to Bluetooth headphones with the
-hi-res codecs ordinary dongles never ship.
+Open-source firmware that turns a Raspberry Pi Pico 2 W (or the Waveshare RP2350B-Plus-W) 
+into a UAC 1/2 sound card that streams to Bluetooth headphones with the hi-quailty codecs.
+
 
 Plug it into any computer, console or handheld with a USB port. No app, no
 driver, no pairing dance on the host — the dongle owns the Bluetooth link, so
