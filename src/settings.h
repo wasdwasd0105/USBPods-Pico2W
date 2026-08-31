@@ -133,14 +133,29 @@ typedef struct __attribute__((packed)) {
                                                (default; zero-fill compat),
                                                1 = 256, 3 = 500. Retuned live
                                                on a running stream. */
-    uint8_t hfp_dis;                        /* 1 = never run the HFP-AG battery
-                                               SLC for this dongle. 0 = enabled
-                                               (zero-fill compat). The escape
-                                               hatch for sinks that react badly
-                                               to an AG on the link: a Bose QC
-                                               tore down its whole profile stack
-                                               the moment our SLC came up
-                                               (field report, fw 1.0.1).
+    uint8_t hfp_en;                         /* 1 = run the HFP-AG battery SLC.
+                                               0 = OFF, and off is the DEFAULT
+                                               on purpose - the polarity is
+                                               "enable", not "disable", so the
+                                               zero-fill that every existing
+                                               record already has (this byte
+                                               was reserved through 1.0.1)
+                                               lands on off without a
+                                               migration.
+                                               Why off: presenting an AG makes
+                                               some headsets treat the dongle
+                                               as a phone. One rang on the
+                                               user's incoming call purely
+                                               because our AG existed - we
+                                               never send RING or callsetup,
+                                               and neither claiming "no network
+                                               service" nor asserting an
+                                               explicit call-end stopped it
+                                               (both tried on HW, both
+                                               reverted). Another tore its
+                                               whole profile stack down when
+                                               our SLC came up. Battery
+                                               percentage is not worth those.
                                                Reboot to apply. */
 } user_settings_t;
 

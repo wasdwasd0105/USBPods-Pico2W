@@ -244,7 +244,8 @@ static void show_advanced_menu(void){
     printf("heal    K kick (suspend->rebuild->restart)   J jitter cycle 150/60/30\n");
     printf("        X auto-recovery on/off   F fake one EP splice\n");
     printf("aacp    Q 0x4c metrics probe   G 0x09/03=0   I 0x09/03=1\n");
-    printf("hfp     Y HFP battery SLC on/off (saved; reboot to apply)\n");
+    printf("hfp     Y HFP battery SLC ....... %s  (saved; reboot to apply)\n",
+           settings()->hfp_en ? "ON" : "off (default)");
     printf("radio   T tx power (headset)   W tx power (phone relay)\n");
     printf("        N hide AAC sink SEP (force SBC relay)   M send one media packet\n");
     printf("avdtp   i select endpoint   a all caps   f get cfg   s set cfg   n reconfigure\n");
@@ -411,10 +412,10 @@ void console_key(char cmd){
             /* Readable + settable from the console: the WebHID toggle alone
                left this write-only, and a user who could not SEE the state
                would re-enable it and get the endless-reconnect loop back. */
-            settings()->hfp_dis = settings()->hfp_dis ? 0 : 1;
+            settings()->hfp_en = settings()->hfp_en ? 0 : 1;
             settings_mark_dirty();
             printf("HFP battery SLC %s (reboot to apply)\n",
-                   settings()->hfp_dis ? "DISABLED" : "enabled");
+                   settings()->hfp_en ? "ENABLED" : "off");
             break;
         case 'H': show_advanced_menu(); break;
         case 'h':

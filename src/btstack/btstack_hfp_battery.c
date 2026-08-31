@@ -26,7 +26,7 @@
 #include "btstack_hfp_battery.h"
 #include "btstack_aap.h"         /* aap_protocol_seen: skip AirPods (AAP owns them) */
 #include "btstack_sink_relay.h"  /* bt_sink_relay_streaming: defer the dial */
-#include "../settings.h"         /* hfp_dis kill switch */
+#include "../settings.h"         /* hfp_en: HFP master switch */
 #include "btstack_avdtp_source.h" /* a2dp_source_is_playing */
 
 /* SDP: 0x10001 AVRCP TG, 0x10002 A2DP src, 0x10003 AVRCP CT, 0x10004 relay sink */
@@ -46,7 +46,7 @@ static btstack_timer_source_t s_dial_timer;
 static uint8_t s_redials;          /* bounded SLC re-dials after a mid-link drop */
 /* Peers that tore the session down when our SLC came up. RAM-only and tiny:
    the point is to stop the SECOND collapse in a session, not to remember
-   forever - hfp_dis is the durable answer. A Bose QC (field report, 1.0.1)
+   forever - hfp_en=0 is the durable answer. A Bose QC (field report, 1.0.1)
    answers our SLC, then immediately closes AVDTP, HFP, AVRCP and the media
    channel while KEEPING the ACL, which poisons every later reconnect. */
 static bd_addr_t s_hostile[2];
@@ -100,7 +100,16 @@ void hfp_battery_note_link_teardown(bool local){
 }
 
 /* canonical AG indicator table (hfp_ag_demo.c) — AT+CIND needs it to
-   complete the SLC; we never change any of these values */
+   complete the SLC; we never change any of these values.
+   TRIED AND REVERTED: setting "service" status 1 -> 0 ("no network
+   service", which is TRUE - this dongle has no cellular anything) to stop a
+   headset ringing on the user's incoming phone call. It did not stop the
+   ring, so the headset keys off the AG EXISTING, not off what it claims.
+   Reverted rather than kept: it changes what every headset is told, for no
+   measured benefit. The working answer for that headset is hfp_en=0 (console
+   'Y' / WCMD 49), which removes the AG entirely and costs the battery
+   percentage. Fields are {index, name, min, max, status, mandatory,
+   enabled, changed} if this is ever revisited. */
 static const hfp_ag_indicator_t s_ag_indicators[] = {
     {1, "service",   0, 1, 1, 0, 0, 0},
     {2, "call",      0, 1, 0, 1, 1, 0},
@@ -251,7 +260,7 @@ static void dial_timer_handler(btstack_timer_source_t *ts){
     (void)ts;
     if (s_dialed || s_slc_up) return;
 
-    if (settings()->hfp_dis){          /* user escape hatch */
+    if (!settings()->hfp_en){          /* HFP off (the default) */
         s_dialed = true;
         return;
     }
@@ -304,7 +313,7 @@ static void dial_timer_handler(btstack_timer_source_t *ts){
 
 void hfp_battery_arm_dial(bd_addr_t addr){
     /* Gate on what init ACTUALLY did, never on the live setting: WCMD 46
-       writes settings()->hfp_dis into the RAM cache immediately, so a user
+       writes settings()->hfp_en into the RAM cache immediately, so a user
        who disables, reboots, then re-enables from the web page would pass a
        live-setting check while the AG was never initialised - arming a timer
        whose .process is still NULL (BTstack dispatches it unguarded) and
@@ -346,8 +355,8 @@ void hfp_battery_init(void){
        function has an early return below. Cheap insurance against every
        future edit that adds another one. */
     btstack_run_loop_set_timer_handler(&s_dial_timer, &dial_timer_handler);
-    if (settings()->hfp_dis){
-        printf("[hfp] battery AG disabled by setting\n");
+    if (!settings()->hfp_en){
+        printf("[hfp] battery AG off (enable with 'Y' or the web page)\n");
         return;
     }
     rfcomm_init();
@@ -367,7 +376,7 @@ void hfp_battery_init(void){
 }
 
 void hfp_battery_register_sdp(void){
-    if (settings()->hfp_dis) return;   /* no AG -> advertise no AG record */
+    if (!settings()->hfp_en) return;   /* no AG -> advertise no AG record */
     hfp_ag_create_sdp_record_with_codecs(s_sdp_buf, HFP_BATTERY_SDP_HANDLE,
         HFP_BATTERY_RFCOMM_CH, "USBPods AG",
         0 /* no call reject */, 0 /* SDP SupportedFeatures: none */,
