@@ -122,6 +122,9 @@ static uint8_t btn_mode(void){
 void on_single_press(void){
     printf("key pressed short (single tap)!\n");
     if (!get_a2dp_connected_flag()) {
+        a2dp_source_wedge_clear();   /* button press = user intent; on a
+                                        headless dongle this is the ONLY way
+                                        back from the wedge brake */
         a2dp_source_reconnect();
         return;
     }

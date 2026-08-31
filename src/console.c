@@ -169,6 +169,8 @@ void console_show_menu(void){
     {   uint8_t us = read_settings_byte();
         printf(" Settings   w  auto-connect on power ....... %s\n",
                (us & USBSET_BOOTCONN) ? "ON" : "off");
+        printf("            z  pause PC when headset drops .. %s\n",
+               (us & USBSET_PAUSEDC) ? "ON" : "off");
         printf("            u  USB audio mode .............. %s\n",
                (us & USBSET_UAC1) ? "UAC1 (legacy hosts)" : "UAC2");
         printf("            k  USB sample rate ............. %s\n",
@@ -242,6 +244,7 @@ static void show_advanced_menu(void){
     printf("heal    K kick (suspend->rebuild->restart)   J jitter cycle 150/60/30\n");
     printf("        X auto-recovery on/off   F fake one EP splice\n");
     printf("aacp    Q 0x4c metrics probe   G 0x09/03=0   I 0x09/03=1\n");
+    printf("hfp     Y HFP battery SLC on/off (saved; reboot to apply)\n");
     printf("radio   T tx power (headset)   W tx power (phone relay)\n");
     printf("        N hide AAC sink SEP (force SBC relay)   M send one media packet\n");
     printf("avdtp   i select endpoint   a all caps   f get cfg   s set cfg   n reconfigure\n");
@@ -284,6 +287,7 @@ static void select_slot(uint8_t want){
     write_uint8_last_flash(want);
     get_link_keys();
     printf("dialing slot %u\n", want);
+    a2dp_source_wedge_clear();   /* the user asked: give the peer a full budget */
     a2dp_source_reconnect();
 }
 
@@ -319,6 +323,7 @@ void console_key(char cmd){
         /* ---- earbuds --------------------------------------------------- */
         case 'c':
             printf("connecting to %s\n", get_device_addr_string());
+            a2dp_source_wedge_clear();   /* the brake's own message says "press c" */
             a2dp_source_reconnect();
             break;
         case 'd':
@@ -350,6 +355,13 @@ void console_key(char cmd){
         /* ---- settings (same fields the web UI writes) ------------------- */
         case 'w':
             toggle_usbset(USBSET_BOOTCONN, "auto-connect on power", "ON", "off", NULL);
+            break;
+        case 'z':
+            /* Same USBSET bit the web UI's "Send pause when headset
+               disconnects" writes, so the two surfaces stay in sync. Only
+               the console can reach it on Lite, which has no web UI. */
+            toggle_usbset(USBSET_PAUSEDC, "pause PC when headset drops",
+                          "ON", "off", NULL);
             break;
         case 'u':   /* descriptor order, read once at enumeration */
             toggle_usbset(USBSET_UAC1, "USB audio mode", "UAC1", "UAC2",
@@ -395,6 +407,15 @@ void console_key(char cmd){
                    on ? "ON" : "off", on ? "on" : "off");
             break;
         }
+        case 'Y':
+            /* Readable + settable from the console: the WebHID toggle alone
+               left this write-only, and a user who could not SEE the state
+               would re-enable it and get the endless-reconnect loop back. */
+            settings()->hfp_dis = settings()->hfp_dis ? 0 : 1;
+            settings_mark_dirty();
+            printf("HFP battery SLC %s (reboot to apply)\n",
+                   settings()->hfp_dis ? "DISABLED" : "enabled");
+            break;
         case 'H': show_advanced_menu(); break;
         case 'h':
         case '?': console_show_menu(); break;

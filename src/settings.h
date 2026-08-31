@@ -133,7 +133,15 @@ typedef struct __attribute__((packed)) {
                                                (default; zero-fill compat),
                                                1 = 256, 3 = 500. Retuned live
                                                on a running stream. */
-    uint8_t reserved[1];                    /* future fields land here (zeroed) */
+    uint8_t hfp_dis;                        /* 1 = never run the HFP-AG battery
+                                               SLC for this dongle. 0 = enabled
+                                               (zero-fill compat). The escape
+                                               hatch for sinks that react badly
+                                               to an AG on the link: a Bose QC
+                                               tore down its whole profile stack
+                                               the moment our SLC came up
+                                               (field report, fw 1.0.1).
+                                               Reboot to apply. */
 } user_settings_t;
 
 void settings_init(void);            /* load / migrate; call EARLY in main() */

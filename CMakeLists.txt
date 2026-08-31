@@ -297,3 +297,23 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
             ${CMAKE_BINARY_DIR}/${USBPODS_OUT_NAME}.uf2
             ${CMAKE_CURRENT_LIST_DIR}/opt/${USBPODS_CHANNEL_DIR}/${USBPODS_OUT_NAME}.uf2
     COMMENT "staging UF2 in opt/${USBPODS_CHANNEL_DIR}/")
+
+# ...and straight on into the web bundle. opt/ stays as the staging area, but
+# the opt/ -> public/ hop used to be a manual `cp` from the README, which is
+# how both shipped UF2s ended up matching no build in this tree. Registered
+# after the staging copy above because POST_BUILD commands run in addition
+# order. `lite` publishes nothing: it feeds no updater.
+set(USBPODS_PUBLISHER ${CMAKE_CURRENT_LIST_DIR}/../webui-usbpods/tools/publish-fw.py)
+if(NOT USBPODS_CHANNEL_DIR STREQUAL "lite")
+    if(EXISTS ${USBPODS_PUBLISHER})
+        add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+            COMMAND python3 ${USBPODS_PUBLISHER}
+                    --board pico2w --channel ${USBPODS_CHANNEL_DIR}
+                    --from ${CMAKE_CURRENT_LIST_DIR}/opt/${USBPODS_CHANNEL_DIR}
+                    --version-name ${_V_NAME} --version-code ${_V_CODE}
+            VERBATIM)
+    else()
+        message(WARNING "usbpods: webui checkout not found - this UF2 will NOT "
+                        "be published (expected ${USBPODS_PUBLISHER})")
+    endif()
+endif()

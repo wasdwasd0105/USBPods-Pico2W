@@ -279,7 +279,9 @@ static void usb_mode_task(void)   /* 50 ms cadence (tinyusb_control_task) */
    if (usb_stop_delay >= 100) a2dp_user_dc_clear();  /* playback stopped: the
                                              next play is fresh user intent */
    if (mode == 3 && !conn && dial_cooldown == 0 &&
-       usb_stop_delay < 100 && !bt_pairing_active() && !a2dp_user_dc_hold()) {
+       usb_stop_delay < 100 && !bt_pairing_active() && !a2dp_user_dc_hold() &&
+       !a2dp_source_wedge_hold()) {   /* peer connects but never streams:
+                                         redialing it just re-chimes forever */
      const uint8_t *mac = settings()->slot[settings()->cur_slot == 2 ? 1 : 0].mac;
      bool have = false, zero = true;
      for (int i = 0; i < 6; i++) { have |= mac[i] != 0xFF; zero &= mac[i] == 0; }

@@ -127,6 +127,33 @@ static uint8_t src_codec_reject_mask;
 int set_next_codec(uint8_t num);   /* defined below — the reject handler above
                                       it re-runs the ladder */
 static bool is_streaming = false;
+
+/* WEDGED-PEER BRAKE (field report, fw 1.0.1 - Bose QC endless reconnect).
+   The only automatic loop-stopper used to be a2dp_source_remote_bye(), which
+   needs an HCI disconnect with reason 0x13/0x15. A sink can instead close
+   every profile channel and KEEP the ACL alive: no disconnect event ever
+   arrives, that brake never fires, and connmode-3 refills the dial budget
+   every 10 s - an infinite loop by construction (37 cycles on ONE ACL handle
+   in the field log, the headset chiming each time).
+
+   The success test is REACHING AUDIO, deliberately not "an AVDTP command was
+   accepted": BTstack emits SIGNALING_ACCEPT for DISCOVER as well, so a peer
+   that answers discovery and then dies would look like progress forever. A
+   session that never streams is a failed session, whatever it answered.
+
+   The hold needs its own flag. src_user_dc_hold cannot serve: it is cleared
+   at every SIGNALING_CONNECTION_ESTABLISHED (:'a live link voids the d hold')
+   - which a wedged peer reaches on every single cycle - and again by
+   uac.c's unconditional playback-stopped clear. Both would unlatch this
+   brake within one cycle. src_wedge_hold is cleared ONLY by deliberate user
+   intent (a2dp_source_wedge_clear from the connect entry points). */
+#define SRC_WEDGE_MAX 4
+static uint8_t src_nostream_run;     /* consecutive sessions that never streamed */
+static bool    src_session_streamed; /* this session reached AVDTP STREAMING     */
+static bool    src_wedge_hold;       /* wedged peer: stop dialing until asked    */
+
+bool a2dp_source_wedge_hold(void){ return src_wedge_hold; }
+void a2dp_source_wedge_clear(void){ src_wedge_hold = false; src_nostream_run = 0; }
 uint8_t cur_codec = 0;
 static int8_t  s_avrcp_batt = -1;   /* AVRCP battery enum, -1 = not reported */
 
@@ -178,6 +205,16 @@ static bool src_stream_established = false;  /* MEDIA (streaming) channel up —
                                                 connection */
 
 static bool finish_scan_avdtp_codec = false;
+/* A media-codec CONFIGURATION landed on the HEADSET link (matched by
+   avdtp_cid, so relay-phone configs never set it). When the sink drives the
+   reconnect it can configure us BEFORE our capability scan finishes AND
+   before the media channel opens - src_stream_established alone missed that
+   window: the select loop fought the remote config with 17 COMMAND_
+   DISALLOWED set_configuration attempts, gave up, and the START then found
+   finish_scan_avdtp_codec false, so the pump never ran: AVDTP said
+   "streaming" while we encoded nothing. Silence until replug (HW: Bose QC,
+   the reconnect right after the wedge-brake fix). */
+static bool src_codec_configured = false;
 
 uint8_t audio_timer_interval = 5;
 
@@ -1486,6 +1523,11 @@ void a2dp_source_remote_bye(uint16_t handle, uint8_t reason){
     src_user_dc_hold = true;
     src_dial_tries = 0;
     src_dial_window_ms = 0;
+    /* A headset that says goodbye over HCI is the OPPOSITE of a wedged peer:
+       the AVDTP release arrives first and already charged the wedge counter,
+       so un-charge it here or four ordinary idle power-offs would latch the
+       wedge brake on a perfectly healthy headset. */
+    src_nostream_run = 0;
     btstack_run_loop_remove_timer(&src_dial_retry_timer);
     printf("headset ended the connection — auto-redial off (press c, or power it back on)\n");
 }
@@ -2758,6 +2800,7 @@ static void packet_handler_inner(uint8_t packet_type, uint16_t channel, uint8_t 
             codec_aaceld_note_capability(false);
             codec_lhdc_note_capability(false, NULL, 0);
             finish_setup_aac = false;
+            src_codec_configured = false;   /* prove it per session */
             status = avdtp_source_discover_stream_endpoints(media_tracker.avdtp_cid);
             a2dp_is_connected_flag = true;
             src_stream_established = false;   /* fresh connection: no media channel yet */
@@ -2765,6 +2808,7 @@ static void packet_handler_inner(uint8_t packet_type, uint16_t channel, uint8_t 
             /* HW-tested best value: full +8 dBm cap on every link ('T'/'W'
                console keys remain for experiments) */
             bt_link_tx_power(src_con_handle, 8);
+            src_session_streamed = false;    /* prove it, per session */
             hfp_battery_arm_dial(address);   /* battery SLC, deferred 2 s */
             {   /* nameless slot (v1-era record): learn the name now */
                 char snm[SLOT_NAME_LEN];
@@ -3001,10 +3045,22 @@ static void packet_handler_inner(uint8_t packet_type, uint16_t channel, uint8_t 
             break;
 
         case AVDTP_SUBEVENT_SIGNALING_MEDIA_CODEC_SBC_CONFIGURATION:
+            if (avdtp_subevent_signaling_media_codec_sbc_configuration_get_avdtp_cid(packet)
+                    == media_tracker.avdtp_cid)
+                src_codec_configured = true;
             codec_sbc_on_configuration(packet);
             break;
 
         case AVDTP_SUBEVENT_SIGNALING_MEDIA_CODEC_MPEG_AAC_CONFIGURATION:
+            if (avdtp_subevent_signaling_media_codec_mpeg_aac_configuration_get_avdtp_cid(packet)
+                    == media_tracker.avdtp_cid){
+                src_codec_configured = true;
+                /* Remote-first config: the finish_setup_aac gate exists to
+                   filter the RELAY's sink-SEP configs (different cid), not a
+                   headset configuring our own link. Without this the handler
+                   early-returned and the encoder was never initialised. */
+                finish_setup_aac = true;
+            }
             codec_aac_on_configuration(packet);
             break;
 
@@ -3014,6 +3070,9 @@ static void packet_handler_inner(uint8_t packet_type, uint16_t channel, uint8_t 
             printf("Config not handled for %s\n", codec_name_for_type(remote_seps[selected_remote_sep_index].sep.capabilities.media_codec.media_codec_type));
             break;
         case AVDTP_SUBEVENT_SIGNALING_MEDIA_CODEC_OTHER_CONFIGURATION:
+            if (avdtp_subevent_signaling_media_codec_other_configuration_get_avdtp_cid(packet)
+                    == media_tracker.avdtp_cid)
+                src_codec_configured = true;
             PLOG("Received other configuration\n");
             uint8_t *codec_info = (uint8_t *) a2dp_subevent_signaling_media_codec_other_configuration_get_media_codec_information(packet);
 
@@ -3186,6 +3245,9 @@ static void packet_handler_inner(uint8_t packet_type, uint16_t channel, uint8_t 
                     if (finish_scan_avdtp_codec){
                         a2dp_demo_timer_start(&media_tracker);
                         is_streaming = true;
+                        src_session_streamed = true;  /* audio: not a wedged peer */
+                        src_nostream_run = 0;
+                        src_wedge_hold   = false;     /* it streamed: unlatch */
                         start_led_blink();
                     }
                     break;
@@ -3321,6 +3383,7 @@ static void packet_handler_inner(uint8_t packet_type, uint16_t channel, uint8_t 
             codec_aaceld_note_capability(false);
             codec_lhdc_note_capability(false, NULL, 0);
             finish_setup_aac = false;
+            src_codec_configured = false;
             media_tracker.avdtp_cid = 0;   /* stale cid must never match a later phone cid */
             /* Release the codec instances — the pump is stopped, and holding
                ~100 KB of encoder while idle starves the relay's AAC decoder
@@ -3333,6 +3396,9 @@ static void packet_handler_inner(uint8_t packet_type, uint16_t channel, uint8_t 
                cur_codec is already 0, so nothing dispatches an encoder in the
                few ms before the sweep runs. */
             src_codec_release_pending = true;
+            /* local = we asked for this teardown ('d', slot switch, pairing);
+               only a teardown we did NOT request can implicate our SLC. */
+            hfp_battery_note_link_teardown(src_user_dc_hold || bt_pairing_active());
             hfp_battery_link_down();
             printf("Signaling connection released.\n");
             break;
@@ -3764,6 +3830,7 @@ void avdtp_disconnect_keep_pairing(){
    still refuse while connected (allow_switch_slot); this is the console's
    richer flow. Disconnected callers dial directly instead. */
 void a2dp_source_switch_slot(uint8_t want){
+    a2dp_source_wedge_clear();   /* the user chose this slot: full budget */
     write_uint8_last_flash(want);
     get_link_keys();   /* reload the dial target: reconnect dials
                           get_device_addr(), which only get_link_keys()
@@ -3826,6 +3893,11 @@ static void src_dial_retry_handler(btstack_timer_source_t *ts) {
 static void src_dial_retry_arm(void) {
     src_dial_tries = 1;
     src_dial_total = 1;
+    /* NOTE: the wedge counter is deliberately NOT reset here. This helper is
+       also reached from uac.c's unattended connmode-3 refill every 10 s -
+       the very path the wedge brake exists to stop - so resetting here would
+       refund the brake forever. Genuine user intent clears it instead, via
+       a2dp_source_wedge_clear() at the connect entry points. */
     src_dial_window_ms = btstack_run_loop_get_time_ms();
     btstack_run_loop_remove_timer(&src_dial_retry_timer);
     btstack_run_loop_set_timer_handler(&src_dial_retry_timer, src_dial_retry_handler);
@@ -3840,6 +3912,52 @@ static void src_dial_retry_arm(void) {
    more if we're inside the 20 s recovery window. */
 static void src_dial_maybe_redial_after_drop(void) {
     if (src_user_dc_hold) return;        /* user said stop — honor it */
+    /* A pairing scan drops the link on purpose and deliberately does NOT set
+       src_user_dc_hold (avdtp_disconnect_and_scan), so without this every 'p'
+       charges the wedge counter and a fourth one latches the brake mid-scan.
+       The two sibling brakes already check this (a2dp_source_remote_bye, and
+       the HFP teardown-blame call site). */
+    if (bt_pairing_active()) return;
+
+    /* A session that reached AVDTP signaling and never got ONE command
+       accepted is not a transient drop - the peer is answering L2CAP and
+       nothing above it (half-open session on its side). Redialing that only
+       re-chimes the headset forever, because with the ACL still up no
+       disconnect event will ever reach a2dp_source_remote_bye(). Give up and
+       drop the ACL: that is the one action that clears the peer's stale
+       session, and the log line tells the user what happened. */
+    /* Stale the run: only a BURST of failures is a wedge, so four unrelated
+       non-streaming sessions spread over hours must not latch. Measured
+       between FAILURES only - stamping on every teardown (successes too)
+       would let a slow wedge cycle reset the run before each increment and
+       the brake would never latch at all. */
+    static uint32_t src_nostream_last_ms;
+    if (!src_session_streamed){
+        uint32_t nnow = btstack_run_loop_get_time_ms();
+        if (src_nostream_last_ms && nnow - src_nostream_last_ms > 60000)
+            src_nostream_run = 0;
+        src_nostream_last_ms = nnow ? nnow : 1;
+    }
+    if (!src_session_streamed && ++src_nostream_run >= SRC_WEDGE_MAX){
+        src_nostream_run   = 0;
+        src_wedge_hold     = true;       /* own flag: see the note at its decl */
+        src_dial_tries     = 0;
+        src_dial_window_ms = 0;
+        btstack_run_loop_remove_timer(&src_dial_retry_timer);
+        led_idle_unless_pairing();   /* never stomp a live pairing flash */
+        printf("headset connects but never starts audio (%u tries) — dropping the "
+               "link and stopping (press c to retry, or power the headset off and "
+               "on)\n", (unsigned)SRC_WEDGE_MAX);
+        /* src_con_handle DIRECTLY, not a2dp_source_con_handle(): the accessor
+           is gated on a2dp_is_connected_flag, which the released handler
+           clears a few lines before calling us - so the accessor returns 0
+           here and the disconnect would silently never happen. The handle
+           itself is still valid: the whole point of this brake is a peer that
+           kept the ACL up. */
+        if (src_con_handle) gap_disconnect(src_con_handle);
+        return;
+    }
+
     if (src_dial_window_ms == 0) return;
     if (btstack_run_loop_get_time_ms() - src_dial_window_ms >= 20000) return;
     if (src_dial_total >= 8) return;
@@ -3931,7 +4049,7 @@ void set_next_capablity_and_start_stream(){
        Discriminator: src_stream_established (MEDIA channel) — NOT
        a2dp_is_connected_flag, which raises at SIGNALING established and
        broke every normal connect ("stream not start"). */
-    if (src_stream_established || is_streaming){
+    if (src_stream_established || is_streaming || src_codec_configured){
         printf("codec select: stream already established (remote configured) — keeping it\n");
         /* The stream is configured and (about to be) started — the START
            accept only starts the PUMP when this flag is set. Without it the

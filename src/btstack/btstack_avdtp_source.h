@@ -112,6 +112,8 @@ void decrease_vol_by_key();
    (plus any modal it owns) and returns false for keys it does not own. */
 bool a2dp_source_console_key(char cmd);
 bool a2dp_source_is_playing(void);          /* stream up AND host feeding    */
+bool a2dp_source_wedge_hold(void);          /* peer connects but never streams */
+void a2dp_source_wedge_clear(void);         /* deliberate user connect intent  */
 void a2dp_source_set_debug_mode(bool on);   /* protocol + AACP logging       */
 void a2dp_source_console_disconnect(void);  /* drop the headset link         */
 

@@ -89,6 +89,12 @@ static void slot_replace_purge(uint8_t slot, const uint8_t *new_mac){
 
 bool bt_pair_to(uint8_t i){
     if (i >= s_found_n) return false;
+    {   /* Pairing a device is the most explicit connect intent there is, and
+           the wedge hold is a single global - without this a hold latched by
+           an old headset silently blocks auto-dial for a brand-new one. */
+        extern void a2dp_source_wedge_clear(void);
+        a2dp_source_wedge_clear();
+    }
     gap_inquiry_stop();
     scan_active = false;
     s_list_mode = false;
@@ -473,6 +479,13 @@ static void hci_packet_handler_inner(uint8_t packet_type, uint16_t channel, uint
                     settings_saved_add(device_addr, "");
                 }
                 led_set_mode(currect_slot == 0x2 ? LED_CONN_SLOT2 : LED_CONN_SLOT1);
+                {   /* headless BOOT long-press pairing: same explicit intent
+                       as bt_pair_to, and the wedge hold is a single global -
+                       a hold left by the OLD headset must not mute auto-dial
+                       for the one the user just paired. */
+                    extern void a2dp_source_wedge_clear(void);
+                    a2dp_source_wedge_clear();
+                }
                 avdtp_source_establish_stream();
             }
             break;
