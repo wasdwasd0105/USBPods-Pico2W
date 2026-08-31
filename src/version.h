@@ -16,8 +16,8 @@
 /* Overridable: a build may pre-define both (compile definitions) and these
    defaults step aside — the values below are this tree's own version. */
 #ifndef USBPODS_VERSION_NAME
-#define USBPODS_VERSION_NAME  "1.0.0"
+#define USBPODS_VERSION_NAME  "1.0.2"
 #endif
 #ifndef USBPODS_VERSION_CODE
-#define USBPODS_VERSION_CODE  1
+#define USBPODS_VERSION_CODE  4
 #endif
