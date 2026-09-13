@@ -6,7 +6,7 @@
 
 ## Turn Pico 2 W into a USB to Bluetooth Aduio Streaming Dongle
 
-** Added BL616! Visit USBPods webUI to control your Dongle! [hub.usbpods.com](https://hub.usbpods.com)**
+**Added BL616 Support! Visit USBPods webUI to control your Dongle! [hub.usbpods.com](https://hub.usbpods.com)**
 
 
 Open-source firmware that turns a Raspberry Pi Pico 2 W (or the Waveshare RP2350B-Plus-W) 
